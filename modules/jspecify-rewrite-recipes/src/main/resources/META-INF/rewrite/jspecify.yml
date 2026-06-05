@@ -42,7 +42,7 @@ name: io.github.jml.jspecify.ConvertKnownAnnotations
 displayName: Convert known nullness annotations to JSpecify
 description: |
   Rewrites well-known legacy nullness annotations (JetBrains, JSR-305,
-  Spring, FindBugs, Checker Framework, RxJava, Reactor, Android, Lombok)
+  Spring, FindBugs, Checker Framework, RxJava, Reactor, Android, Micrometer)
   to their JSpecify counterparts.
 recipeList:
   - io.github.javamodernizationlabs.jspecify.rewrite.ConvertKnownAnnotations
@@ -110,9 +110,29 @@ recipeList:
   - org.openrewrite.java.search.FindAnnotations:
       annotationPattern: "@javax.annotation.Nullable"
   - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@javax.annotation.CheckForNull"
+  - org.openrewrite.java.search.FindAnnotations:
       annotationPattern: "@jakarta.annotation.Nullable"
   - org.openrewrite.java.search.FindAnnotations:
       annotationPattern: "@org.springframework.lang.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@edu.umd.cs.findbugs.annotations.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@edu.umd.cs.findbugs.annotations.PossiblyNull"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@io.micrometer.common.lang.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@androidx.annotation.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@android.support.annotation.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@com.android.annotations.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@org.checkerframework.checker.nullness.qual.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@io.reactivex.rxjava3.annotations.Nullable"
+  - org.openrewrite.java.search.FindAnnotations:
+      annotationPattern: "@reactor.util.annotation.Nullable"
 ---
 type: specs.openrewrite.org/v1beta/recipe
 name: io.github.jml.jspecify.RemoveOldAnnotationDependencies

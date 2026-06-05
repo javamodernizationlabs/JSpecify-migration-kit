@@ -103,4 +103,56 @@ class JspecifyMigrationPluginTest {
         Path report = tmp.resolve("build/reports/jml/jspecify/nullaway-check.md");
         assertTrue(Files.readString(report).contains("Status: `ready`"));
     }
+
+    @Test
+    void verifyKotlinFailOnWarningsThrowsGradleException(@TempDir Path tmp) throws Exception {
+        var project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
+        project.getPlugins().apply("java");
+        project.getPlugins().apply(JspecifyMigrationPlugin.class);
+        Path source = tmp.resolve("src/main/java/com/acme/Api.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source,
+                """
+                package com.acme;
+                public class Api {
+                    public String name() { return ""; }
+                }
+                """);
+        var task = (JspecifyVerifyKotlinTask) project.getTasks()
+                .getByName("jspecifyVerifyKotlin");
+        task.getKotlinVerificationEnabled().set(true);
+        task.getFailOnWarnings().set(true);
+
+        var failure = assertThrows(org.gradle.api.GradleException.class, task::run);
+
+        assertTrue(failure.getMessage().contains("Kotlin verification warnings"));
+    }
+
+    @Test
+    void rewriteTaskHonorsCustomAnnotationMappings(@TempDir Path tmp) throws Exception {
+        Files.writeString(tmp.resolve("jspecify.yml"),
+                """
+                annotations:
+                  mappings:
+                    com.acme.Nullable: org.jspecify.annotations.Nullable
+                """);
+        var project = ProjectBuilder.builder().withProjectDir(tmp.toFile()).build();
+        project.getPlugins().apply("java");
+        project.getPlugins().apply(JspecifyMigrationPlugin.class);
+        Path source = tmp.resolve("src/main/java/com/acme/Api.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source,
+                """
+                package com.acme;
+                import com.acme.Nullable;
+                class Api { @Nullable String name() { return null; } }
+                """);
+        var task = (JspecifyRewriteHintTask) project.getTasks()
+                .getByName("jspecifyRewriteApply");
+        task.getRecipe().set("convert-known-annotations");
+
+        task.run();
+
+        assertTrue(Files.readString(source).contains("org.jspecify.annotations.Nullable"));
+    }
 }

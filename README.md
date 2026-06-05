@@ -46,7 +46,7 @@ This kit is built around a safer workflow:
 
 | Capability | What it gives you |
 | --- | --- |
-| Annotation inventory | Finds JetBrains, JSR-305, Spring, FindBugs, Checker Framework, RxJava, Reactor, Android, Micrometer, and Lombok nullness annotations. |
+| Annotation inventory | Finds JetBrains, JSR-305, Spring, FindBugs, Checker Framework, RxJava, Reactor, Android, and Micrometer nullness annotations. |
 | Migration plan | Turns inventory into ordered phases with risk, issues, recommendations, and CI gates. |
 | OpenRewrite recipes | Adds `org.jspecify:jspecify`, converts known annotations, flags unsafe package defaults, and removes old annotation dependencies. |
 | Multi-format reports | Writes console, HTML, Markdown, JSON, SARIF, and JUnit XML output for humans, CI, and code scanning. |

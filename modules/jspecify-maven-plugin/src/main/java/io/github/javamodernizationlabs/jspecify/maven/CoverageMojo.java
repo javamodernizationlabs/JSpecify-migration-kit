@@ -14,7 +14,7 @@ import org.apache.maven.project.MavenProject;
 import java.io.File;
 
 /**
- * Implements the {@code jspecify:coverage} goal.
+ * Implements the {@code jspecify-migration:coverage} goal.
  *
  * <p>This goal analyzes how much of the current Maven project is already covered by JSpecify
  * nullness annotations and writes a coverage report to the configured output directory.
@@ -36,7 +36,7 @@ public class CoverageMojo extends AbstractMojo {
     private File outputDirectory;
 
     /**
-     * Runs the {@code jspecify:coverage} goal.
+     * Runs the {@code jspecify-migration:coverage} goal.
      *
      * <p>Loads the JSpecify configuration, computes a coverage summary for the project, and writes
      * the coverage report to the configured output directory.

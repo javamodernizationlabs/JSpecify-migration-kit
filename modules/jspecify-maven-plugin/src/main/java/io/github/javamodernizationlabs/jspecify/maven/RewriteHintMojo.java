@@ -1,5 +1,6 @@
 package io.github.javamodernizationlabs.jspecify.maven;
 
+import io.github.javamodernizationlabs.jspecify.AnnotationCatalog;
 import io.github.javamodernizationlabs.jspecify.ProjectModel;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfig;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfigLoader;
@@ -15,7 +16,7 @@ import java.io.File;
 import java.util.List;
 
 /**
- * Implements the {@code jspecify:rewrite-hint} goal.
+ * Implements the {@code jspecify-migration:rewrite-hint} goal.
  *
  * <p>This goal runs the configured OpenRewrite recipe against the current Maven project to add
  * JSpecify nullness annotations and writes a Markdown summary of the changed files and replacements
@@ -42,11 +43,14 @@ public class RewriteHintMojo extends AbstractMojo {
     @Parameter(property = "jspecify.apply", defaultValue = "false")
     private boolean apply;
 
+    private final Boolean forcedApply;
+
     /**
      * Creates a mojo that performs a dry run unless overridden by the {@code jspecify.apply}
      * parameter.
      */
     public RewriteHintMojo() {
+        this.forcedApply = null;
     }
 
     /**
@@ -58,10 +62,11 @@ public class RewriteHintMojo extends AbstractMojo {
      */
     protected RewriteHintMojo(boolean apply) {
         this.apply = apply;
+        this.forcedApply = apply;
     }
 
     /**
-     * Runs the {@code jspecify:rewrite-hint} goal.
+     * Runs the {@code jspecify-migration:rewrite-hint} goal.
      *
      * <p>Loads the JSpecify configuration, runs the configured recipe against the project (applying
      * changes only when apply mode is enabled), and writes a Markdown summary of the changed files
@@ -75,11 +80,12 @@ public class RewriteHintMojo extends AbstractMojo {
         try {
             var projectRoot = project.getBasedir().toPath();
             JspecifyConfig config = JspecifyConfigLoader.load(projectRoot);
-            var result = new JspecifyRewriter().rewrite(ProjectModel.of(projectRoot, config),
-                    List.of(recipe), apply);
+            boolean effectiveApply = forcedApply == null ? apply : forcedApply;
+            var result = new JspecifyRewriter(new AnnotationCatalog(config.annotationMappings()))
+                    .rewrite(ProjectModel.of(projectRoot, config), List.of(recipe), effectiveApply);
             var report = outputDirectory.toPath().resolve("rewrite.md");
             new RewriteReportWriter().write(report, result);
-            getLog().info("JSpecify rewrite " + (apply ? "applied" : "dry run")
+            getLog().info("JSpecify rewrite " + (effectiveApply ? "applied" : "dry run")
                     + ": " + result.changedFiles() + " files, "
                     + result.replacements() + " replacements");
             getLog().info("JSpecify rewrite report written to " + report);

@@ -15,7 +15,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 /**
- * Implements the {@code jspecify:verify-kotlin} goal.
+ * Implements the {@code jspecify-migration:verify-kotlin} goal.
  *
  * <p>This goal verifies how the current Maven project's JSpecify nullness annotations are seen from
  * Kotlin. It can optionally generate Kotlin interop samples and compile them, and writes a
@@ -48,7 +48,7 @@ public class VerifyKotlinMojo extends AbstractMojo {
     private boolean failOnWarnings;
 
     /**
-     * Runs the {@code jspecify:verify-kotlin} goal.
+     * Runs the {@code jspecify-migration:verify-kotlin} goal.
      *
      * <p>Loads the JSpecify configuration, runs the Kotlin interop verifier over the project (using
      * the project's compiled output directory and the configured sample-generation and compilation
@@ -72,6 +72,8 @@ public class VerifyKotlinMojo extends AbstractMojo {
                         + String.join("; ", result.warnings()));
             }
             getLog().info("JSpecify Kotlin verification report written to " + out);
+        } catch (MojoExecutionException e) {
+            throw e;
         } catch (Exception e) {
             throw new MojoExecutionException("JSpecify Kotlin verification failed: " + e.getMessage(), e);
         }

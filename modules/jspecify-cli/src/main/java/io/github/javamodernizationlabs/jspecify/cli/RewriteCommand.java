@@ -27,7 +27,7 @@ import java.util.concurrent.Callable;
  */
 @Command(
         name = "rewrite",
-        description = "Apply OpenRewrite recipes via the OpenRewrite Maven/Gradle plugin.",
+        description = "Preview or apply built-in JSpecify migration rewrite recipes.",
         mixinStandardHelpOptions = true
 )
 public class RewriteCommand implements Callable<Integer> {

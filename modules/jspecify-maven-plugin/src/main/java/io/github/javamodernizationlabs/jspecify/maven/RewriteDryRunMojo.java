@@ -3,7 +3,7 @@ package io.github.javamodernizationlabs.jspecify.maven;
 import org.apache.maven.plugins.annotations.Mojo;
 
 /**
- * Implements the {@code jspecify:rewrite-dry-run} goal.
+ * Implements the {@code jspecify-migration:rewrite-dry-run} goal.
  *
  * <p>This goal runs the configured OpenRewrite recipe and reports the JSpecify nullness annotation
  * changes that would be made without modifying any source files. It is a thin variant of

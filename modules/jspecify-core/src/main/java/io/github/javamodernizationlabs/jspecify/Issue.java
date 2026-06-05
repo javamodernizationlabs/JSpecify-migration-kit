@@ -176,8 +176,9 @@ public record Issue(
                                       Location location, String message) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
-            String seed = tool + "|" + ruleId + "|" + location.path() + "|"
-                    + location.startLine() + "|" + message;
+            String normalizedPath = location.path().toString().replace('\\', '/');
+            String seed = tool + "|" + ruleId + "|" + normalizedPath + "|"
+                    + location.startLine() + "|" + location.startColumn() + "|" + message;
             md.update(seed.getBytes(StandardCharsets.UTF_8));
             return "sha256:" + HexFormat.of().formatHex(md.digest());
         } catch (NoSuchAlgorithmException e) {

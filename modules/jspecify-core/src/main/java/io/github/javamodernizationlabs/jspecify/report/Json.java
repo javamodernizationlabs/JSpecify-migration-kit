@@ -1,6 +1,7 @@
 package io.github.javamodernizationlabs.jspecify.report;
 
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -29,7 +30,7 @@ final class Json {
                 case '\f' -> sb.append("\\f");
                 default -> {
                     if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
+                        sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
                     } else {
                         sb.append(c);
                     }

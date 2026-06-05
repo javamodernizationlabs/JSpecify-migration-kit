@@ -1,5 +1,6 @@
 package io.github.javamodernizationlabs.jspecify;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,12 +24,17 @@ public record AnnotationInventory(
      * maps for {@code null} arguments.
      */
     public AnnotationInventory {
-        totalByAnnotation = totalByAnnotation == null
+        totalByAnnotation = Collections.unmodifiableMap(totalByAnnotation == null
                 ? new LinkedHashMap<>()
-                : new LinkedHashMap<>(totalByAnnotation);
-        locationsByAnnotation = locationsByAnnotation == null
-                ? new LinkedHashMap<>()
-                : new LinkedHashMap<>(locationsByAnnotation);
+                : new LinkedHashMap<>(totalByAnnotation));
+        Map<String, List<Location>> copiedLocations = new LinkedHashMap<>();
+        if (locationsByAnnotation != null) {
+            locationsByAnnotation.forEach((annotation, locations) ->
+                    copiedLocations.put(annotation, locations == null
+                            ? List.of()
+                            : List.copyOf(locations)));
+        }
+        locationsByAnnotation = Collections.unmodifiableMap(copiedLocations);
     }
 
     /**

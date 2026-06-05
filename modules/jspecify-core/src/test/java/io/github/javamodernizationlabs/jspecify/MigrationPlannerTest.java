@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class MigrationPlannerTest {
 
@@ -38,5 +39,25 @@ class MigrationPlannerTest {
         var plan = new MigrationPlanner().plan(empty);
         assertEquals(6, plan.phases().size());
         assertFalse(plan.phases().get(0).commands().isEmpty());
+    }
+
+    @Test
+    void jspecifyAnnotationsDoNotIncreaseRisk() {
+        var counts = new LinkedHashMap<String, Integer>();
+        counts.put("org.jspecify.annotations.NullMarked", 500);
+        AnnotationInventory inventory = new AnnotationInventory(counts, new LinkedHashMap<>(), 1);
+
+        assertEquals(MigrationPlan.Risk.LOW,
+                new MigrationPlanner().plan(inventory).estimatedRisk());
+    }
+
+    @Test
+    void annotationInventoryDoesNotExposeMutableMaps() {
+        AnnotationInventory inventory = AnnotationInventory.empty();
+
+        assertThrows(UnsupportedOperationException.class,
+                () -> inventory.totalByAnnotation().put("x", 1));
+        assertThrows(UnsupportedOperationException.class,
+                () -> inventory.locationsByAnnotation().put("x", List.of()));
     }
 }

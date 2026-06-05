@@ -87,6 +87,14 @@ public class PlanCommand implements Callable<Integer> {
     public Integer call() throws Exception {
         Path projectRoot = project.toAbsolutePath().normalize();
         JspecifyConfig config = JspecifyConfigLoader.load(projectRoot);
+        Severity threshold;
+        try {
+            threshold = Severity.parse(failOn);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Unknown severity for --fail-on: " + failOn
+                    + ". Expected info, low, medium, high, or critical.");
+            return 2;
+        }
         ProjectModel model = ProjectModel.of(projectRoot, config);
         AnnotationInventory inventory = AnnotationScanner.forConfig(config).scan(model);
         MigrationPlan plan = new MigrationPlanner().plan(inventory);
@@ -128,7 +136,6 @@ public class PlanCommand implements Callable<Integer> {
         if (allowNewIssues || baseline == null) {
             return 0;
         }
-        Severity threshold = Severity.parse(failOn);
         boolean hasFailingNewIssues = baselineStore
                 .newIssues(plan.issues(), baseline.toAbsolutePath().normalize())
                 .stream()

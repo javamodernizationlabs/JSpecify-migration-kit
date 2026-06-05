@@ -9,8 +9,10 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.Callable;
 
 /**
@@ -36,7 +38,7 @@ public class CoverageCommand implements Callable<Integer> {
     }
 
     @Option(names = {"--project"}, defaultValue = ".") Path project;
-    @Option(names = {"--scope"}, defaultValue = "public-api") String scope;
+    @Option(names = {"--scope"}, defaultValue = "public-api") String scope = "public-api";
     @Option(names = {"--format"}, split = ",") List<String> formats;
     @Option(names = {"--output-dir"}) Path output;
 
@@ -62,15 +64,40 @@ public class CoverageCommand implements Callable<Integer> {
         Path out = output == null
                 ? config.resolveReportsOutputDirectory(projectRoot)
                 : output.toAbsolutePath().normalize();
-        List<String> requestedFormats = formats == null || formats.isEmpty()
-                ? config.reportFormats().stream()
-                .filter(format -> !format.equalsIgnoreCase("console"))
-                .map(format -> format.toLowerCase(Locale.ROOT))
-                .toList()
-                : formats;
-        new CoverageReportWriter().write(out, summary, requestedFormats);
-        System.out.printf("JSpecify coverage: %.1f%%%n", summary.specifiedRatio() * 100.0d);
-        System.out.println("Coverage reports written to " + out);
+        List<String> requestedFormats = normalizeFormats(formats == null || formats.isEmpty()
+                ? config.reportFormats()
+                : formats);
+        Set<String> unknownFormats = unknownFormats(requestedFormats);
+        if (!unknownFormats.isEmpty()) {
+            System.err.println("Unknown coverage format(s): " + String.join(",", unknownFormats));
+            return 2;
+        }
+        List<String> fileFormats = requestedFormats.stream()
+                .filter(format -> !format.equals("console"))
+                .toList();
+        if (!fileFormats.isEmpty()) {
+            new CoverageReportWriter().write(out, summary, fileFormats);
+            System.out.println("Coverage reports written to " + out);
+        }
+        System.out.printf(Locale.ROOT, "JSpecify coverage: %.1f%%%n",
+                summary.specifiedRatio() * 100.0d);
         return 0;
+    }
+
+    private List<String> normalizeFormats(List<String> rawFormats) {
+        return rawFormats.stream()
+                .filter(format -> format != null && !format.isBlank())
+                .map(format -> format.trim().toLowerCase(Locale.ROOT))
+                .toList();
+    }
+
+    private Set<String> unknownFormats(List<String> requestedFormats) {
+        Set<String> unknown = new LinkedHashSet<>();
+        for (String format : requestedFormats) {
+            if (!Set.of("console", "markdown", "md", "json", "html").contains(format)) {
+                unknown.add(format);
+            }
+        }
+        return unknown;
     }
 }

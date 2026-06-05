@@ -6,8 +6,6 @@ import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 import io.github.javamodernizationlabs.jspecify.Recommendation;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -62,8 +60,7 @@ public final class JsonReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, render(plan), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, render(plan));
     }
 
     private String renderAnnotationCounts(Map<String, Integer> counts) {
@@ -113,7 +110,7 @@ public final class JsonReportWriter {
 
     private String renderLocation(Location loc) {
         Map<String, String> obj = new LinkedHashMap<>();
-        obj.put("path", Json.string(loc.path().toString()));
+        obj.put("path", Json.string(loc.path().toString().replace('\\', '/')));
         obj.put("startLine", Json.number(loc.startLine()));
         obj.put("startColumn", Json.number(loc.startColumn()));
         obj.put("endLine", Json.number(loc.endLine()));

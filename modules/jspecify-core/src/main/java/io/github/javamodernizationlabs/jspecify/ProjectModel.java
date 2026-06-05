@@ -3,6 +3,7 @@ package io.github.javamodernizationlabs.jspecify;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfig;
 
 import java.io.IOException;
+import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -240,6 +241,19 @@ public record ProjectModel(
             }
         }
         return true;
+    }
+
+    /**
+     * Walks a source root using this model's symbolic-link policy.
+     *
+     * @param root the root to walk
+     * @return a stream of paths under {@code root}
+     * @throws IOException if the root cannot be walked
+     */
+    public Stream<Path> walk(Path root) throws IOException {
+        return followSymlinks
+                ? Files.walk(root, FileVisitOption.FOLLOW_LINKS)
+                : Files.walk(root);
     }
 
     /**

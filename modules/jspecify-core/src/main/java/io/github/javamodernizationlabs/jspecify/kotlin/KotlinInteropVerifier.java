@@ -14,6 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -118,7 +122,7 @@ public final class KotlinInteropVerifier {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> javaFiles = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -150,7 +154,7 @@ public final class KotlinInteropVerifier {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> files = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -212,9 +216,14 @@ public final class KotlinInteropVerifier {
                                                      Map<String, String> imports,
                                                      boolean nullMarked) {
         List<MethodAssertion> methods = new ArrayList<>();
+        boolean inPublicType = false;
+        int braceDepth = 0;
         for (String line : lines) {
+            if (!inPublicType && PUBLIC_TYPE.matcher(line).find()) {
+                inPublicType = true;
+            }
             Matcher matcher = PUBLIC_NO_ARG_METHOD.matcher(line);
-            if (matcher.find()) {
+            if (inPublicType && braceDepth == 1 && matcher.find()) {
                 String method = matcher.group(2);
                 if (!method.equals("if") && !method.equals("for") && !method.equals("while")) {
                     String returnType = matcher.group(1).trim();
@@ -222,8 +231,34 @@ public final class KotlinInteropVerifier {
                             imports, nullMarked));
                 }
             }
+            if (inPublicType) {
+                braceDepth += braceDelta(line);
+            }
         }
         return methods;
+    }
+
+    private int braceDelta(String line) {
+        int delta = 0;
+        boolean inString = false;
+        boolean inChar = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\\' && (inString || inChar) && i + 1 < line.length()) {
+                i++;
+                continue;
+            }
+            if (!inChar && c == '"') {
+                inString = !inString;
+            } else if (!inString && c == '\'') {
+                inChar = !inChar;
+            } else if (!inString && !inChar && c == '{') {
+                delta++;
+            } else if (!inString && !inChar && c == '}') {
+                delta--;
+            }
+        }
+        return delta;
     }
 
     private MethodAssertion methodAssertion(String qualifiedTypeName,
@@ -266,18 +301,59 @@ public final class KotlinInteropVerifier {
     private String cleanReturnType(String javaReturnType) {
         return javaReturnType
                 .replaceAll("@[\\w.]+\\s*", "")
-                .replaceAll("\\b(static|final|synchronized|native|strictfp)\\b\\s*", "")
-                .replaceAll("<[^>]+>\\s*", "")
+                .replaceAll("\\b(static|final|synchronized|native|strictfp|default|abstract)\\b\\s*", "")
                 .trim();
     }
 
     private String kotlinType(String javaType, Map<String, String> imports) {
-        String arraySuffix = "";
+        javaType = javaType.trim();
+        int dimensions = 0;
         while (javaType.endsWith("[]")) {
-            arraySuffix += ">";
-            javaType = "Array<" + javaType.substring(0, javaType.length() - 2).trim();
+            dimensions++;
+            javaType = javaType.substring(0, javaType.length() - 2).trim();
         }
-        String mapped = switch (javaType) {
+        String mapped = kotlinNonArrayType(javaType, imports);
+        if (dimensions == 0) {
+            return mapped;
+        }
+        if (dimensions == 1 && primitive(javaType)) {
+            return switch (javaType) {
+                case "boolean" -> "BooleanArray";
+                case "byte" -> "ByteArray";
+                case "short" -> "ShortArray";
+                case "int" -> "IntArray";
+                case "long" -> "LongArray";
+                case "float" -> "FloatArray";
+                case "double" -> "DoubleArray";
+                case "char" -> "CharArray";
+                default -> mapped;
+            };
+        }
+        for (int i = 0; i < dimensions; i++) {
+            mapped = "Array<" + mapped + ">";
+        }
+        return mapped;
+    }
+
+    private String kotlinNonArrayType(String javaType, Map<String, String> imports) {
+        int genericStart = javaType.indexOf('<');
+        if (genericStart >= 0 && javaType.endsWith(">")) {
+            String base = javaType.substring(0, genericStart).trim();
+            String args = javaType.substring(genericStart + 1, javaType.length() - 1);
+            String mappedBase = kotlinSimpleType(base, imports);
+            String mappedArgs = splitTopLevel(args).stream()
+                    .map(String::trim)
+                    .filter(arg -> !arg.isBlank())
+                    .map(arg -> kotlinType(normalizeWildcard(arg), imports))
+                    .reduce((left, right) -> left + ", " + right)
+                    .orElse("");
+            return mappedBase + "<" + mappedArgs + ">";
+        }
+        return kotlinSimpleType(javaType, imports);
+    }
+
+    private String kotlinSimpleType(String javaType, Map<String, String> imports) {
+        return switch (javaType) {
             case "boolean" -> "Boolean";
             case "byte" -> "Byte";
             case "short" -> "Short";
@@ -290,7 +366,43 @@ public final class KotlinInteropVerifier {
             case "Object", "java.lang.Object" -> "Any";
             default -> imports.getOrDefault(javaType, javaType);
         };
-        return mapped + arraySuffix;
+    }
+
+    private List<String> splitTopLevel(String body) {
+        List<String> result = new ArrayList<>();
+        int depth = 0;
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if (c == '>') {
+                depth = Math.max(0, depth - 1);
+            } else if (c == ',' && depth == 0) {
+                result.add(current.toString());
+                current.setLength(0);
+                continue;
+            }
+            current.append(c);
+        }
+        if (!current.isEmpty()) {
+            result.add(current.toString());
+        }
+        return result;
+    }
+
+    private String normalizeWildcard(String javaType) {
+        String trimmed = javaType.trim();
+        if (trimmed.equals("?")) {
+            return "Any";
+        }
+        if (trimmed.startsWith("? extends ")) {
+            return trimmed.substring("? extends ".length()).trim();
+        }
+        if (trimmed.startsWith("? super ")) {
+            return trimmed.substring("? super ".length()).trim();
+        }
+        return trimmed;
     }
 
     private boolean primitive(String javaType) {
@@ -320,15 +432,16 @@ public final class KotlinInteropVerifier {
             Process process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
                     .start();
+            CompletableFuture<String> outputFuture = readOutputAsync(process);
             boolean exited = process.waitFor(Duration.ofSeconds(30).toMillis(),
-                    java.util.concurrent.TimeUnit.MILLISECONDS);
-            String output = new String(process.getInputStream().readAllBytes(),
-                    StandardCharsets.UTF_8);
+                    TimeUnit.MILLISECONDS);
             if (!exited) {
                 process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
                 warnings.add("kotlinc timed out after 30 seconds.");
                 return "failed: timeout";
             }
+            String output = outputFuture.get(5, TimeUnit.SECONDS);
             if (process.exitValue() != 0) {
                 warnings.add(output.isBlank() ? "kotlinc failed." : output.strip());
                 return "failed";
@@ -341,6 +454,9 @@ public final class KotlinInteropVerifier {
             Thread.currentThread().interrupt();
             warnings.add("kotlinc was interrupted.");
             return "failed";
+        } catch (ExecutionException | TimeoutException e) {
+            warnings.add("Unable to read kotlinc output: " + e.getMessage());
+            return "failed";
         }
     }
 
@@ -349,14 +465,33 @@ public final class KotlinInteropVerifier {
             Process process = new ProcessBuilder(command, "-version")
                     .redirectErrorStream(true)
                     .start();
-            return process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            CompletableFuture<String> outputFuture = readOutputAsync(process);
+            boolean available = process.waitFor(10, TimeUnit.SECONDS)
                     && process.exitValue() == 0;
+            if (!available && process.isAlive()) {
+                process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
+            outputFuture.get(5, TimeUnit.SECONDS);
+            return available;
         } catch (IOException e) {
             return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
+        } catch (ExecutionException | TimeoutException e) {
+            return false;
         }
+    }
+
+    private CompletableFuture<String> readOutputAsync(Process process) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                return "";
+            }
+        });
     }
 
     private void writeReport(Path outputDirectory,

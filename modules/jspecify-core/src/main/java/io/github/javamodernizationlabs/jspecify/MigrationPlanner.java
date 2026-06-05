@@ -59,8 +59,13 @@ public final class MigrationPlanner {
     }
 
     private MigrationPlan.Risk estimateRisk(AnnotationInventory inventory) {
-        int total = inventory.totalAnnotations();
-        int distinct = inventory.totalByAnnotation().size();
+        int total = inventory.totalByAnnotation().entrySet().stream()
+                .filter(entry -> !entry.getKey().startsWith("org.jspecify."))
+                .mapToInt(entry -> entry.getValue())
+                .sum();
+        int distinct = (int) inventory.totalByAnnotation().keySet().stream()
+                .filter(annotation -> !annotation.startsWith("org.jspecify."))
+                .count();
         if (total == 0) {
             return MigrationPlan.Risk.LOW;
         }

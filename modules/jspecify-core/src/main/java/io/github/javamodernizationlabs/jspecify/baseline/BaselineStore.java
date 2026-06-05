@@ -4,8 +4,10 @@ import io.github.javamodernizationlabs.jspecify.Issue;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +24,9 @@ public final class BaselineStore {
 
     private static final Pattern FINGERPRINT =
             Pattern.compile("\"fingerprint\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern BASELINE_SHAPE =
+            Pattern.compile("\\A\\s*\\{\\s*\"fingerprints\"\\s*:\\s*\\[.*]\\s*}\\s*\\z",
+                    Pattern.DOTALL);
 
     /**
      * Creates a {@code BaselineStore}.
@@ -42,6 +47,10 @@ public final class BaselineStore {
             return Set.of();
         }
         String content = Files.readString(baselineFile, StandardCharsets.UTF_8);
+        if (!content.isBlank() && !BASELINE_SHAPE.matcher(content).matches()) {
+            throw new IOException("Invalid JSpecify baseline format in "
+                    + baselineFile);
+        }
         Set<String> fingerprints = new LinkedHashSet<>();
         var matcher = FINGERPRINT.matcher(content);
         while (matcher.find()) {
@@ -86,6 +95,14 @@ public final class BaselineStore {
             sb.append("{\"fingerprint\":\"").append(issues.get(i).fingerprint()).append("\"}");
         }
         sb.append("]}\n");
-        Files.writeString(baselineFile, sb.toString(), StandardCharsets.UTF_8);
+        Path directory = baselineFile.getParent() == null ? Path.of(".") : baselineFile.getParent();
+        Path temp = Files.createTempFile(directory, baselineFile.getFileName().toString(), ".tmp");
+        Files.writeString(temp, sb.toString(), StandardCharsets.UTF_8);
+        try {
+            Files.move(temp, baselineFile, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(temp, baselineFile, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }

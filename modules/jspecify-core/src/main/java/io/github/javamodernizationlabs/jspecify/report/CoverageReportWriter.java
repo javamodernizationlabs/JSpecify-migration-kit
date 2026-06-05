@@ -32,7 +32,7 @@ public final class CoverageReportWriter {
      * @return the coverage report as Markdown text
      */
     public String markdown(CoverageSummary summary) {
-        return """
+        return String.format(Locale.ROOT, """
                 # JSpecify Coverage
 
                 | Metric | Value |
@@ -50,7 +50,7 @@ public final class CoverageReportWriter {
                 | Generic type-use coverage | %d / %d = %.1f%% |
                 | Ambiguous annotations | %d |
                 | Kotlin interop warnings | %d |
-                """.formatted(
+                """,
                 summary.publicApiElements(),
                 summary.specifiedPublicApiElements(),
                 summary.specifiedRatio() * 100.0d,
@@ -162,7 +162,7 @@ public final class CoverageReportWriter {
      * @return the coverage report as an HTML string
      */
     public String html(CoverageSummary summary) {
-        return """
+        return String.format(Locale.ROOT, """
                 <!doctype html>
                 <html lang="en">
                 <head>
@@ -190,7 +190,7 @@ public final class CoverageReportWriter {
                   </table>
                 </body>
                 </html>
-                """.formatted(
+                """,
                 summary.specifiedRatio() * 100.0d,
                 summary.nullMarkedPackageRatio() * 100.0d,
                 summary.returnNullnessRatio() * 100.0d,
@@ -210,7 +210,7 @@ public final class CoverageReportWriter {
             if (format == null || format.isBlank()) {
                 continue;
             }
-            normalized.add(format.toLowerCase(Locale.ROOT));
+            normalized.add(format.trim().toLowerCase(Locale.ROOT));
         }
         return normalized;
     }

@@ -88,7 +88,7 @@ public final class AnnotationScanner {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> javaFiles = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -109,29 +109,35 @@ public final class AnnotationScanner {
                   Map<String, List<Location>> locations) throws IOException {
         List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
         Map<String, String> shortToFqn = new HashMap<>();
+        Set<String> ambiguousShortNames = new LinkedHashSet<>();
         Set<String> wildcardPackages = new LinkedHashSet<>();
         Set<String> knownAnnotations = knownAnnotations();
         // First pass: resolve imports of known annotations and their short names.
+        boolean inBlockComment = false;
         for (String line : lines) {
-            Matcher m = IMPORT_PATTERN.matcher(line);
+            CommentStripResult stripped = stripComments(line, inBlockComment);
+            inBlockComment = stripped.inBlockComment();
+            Matcher m = IMPORT_PATTERN.matcher(stripped.line());
             if (m.find()) {
                 String fqn = m.group(2);
                 if (fqn.endsWith(".*")) {
                     wildcardPackages.add(fqn.substring(0, fqn.length() - 2));
                 } else if (knownAnnotations.contains(fqn)) {
                     String simple = fqn.substring(fqn.lastIndexOf('.') + 1);
-                    shortToFqn.put(simple, fqn);
+                    addShortNameMapping(shortToFqn, ambiguousShortNames, simple, fqn);
                 }
             }
         }
         for (String fqn : knownAnnotations) {
             String packageName = fqn.substring(0, fqn.lastIndexOf('.'));
             if (wildcardPackages.contains(packageName)) {
-                shortToFqn.put(fqn.substring(fqn.lastIndexOf('.') + 1), fqn);
+                addShortNameMapping(shortToFqn, ambiguousShortNames,
+                        fqn.substring(fqn.lastIndexOf('.') + 1), fqn);
             }
         }
+        ambiguousShortNames.forEach(shortToFqn::remove);
         // Second pass: count annotation references by short name on this file's lines.
-        boolean inBlockComment = false;
+        inBlockComment = false;
         for (int i = 0; i < lines.size(); i++) {
             CommentStripResult stripped = stripComments(lines.get(i), inBlockComment);
             inBlockComment = stripped.inBlockComment();
@@ -169,6 +175,16 @@ public final class AnnotationScanner {
         return known;
     }
 
+    private void addShortNameMapping(Map<String, String> shortToFqn,
+                                     Set<String> ambiguousShortNames,
+                                     String simple,
+                                     String fqn) {
+        String existing = shortToFqn.putIfAbsent(simple, fqn);
+        if (existing != null && !existing.equals(fqn)) {
+            ambiguousShortNames.add(simple);
+        }
+    }
+
     private void addHit(Path projectRoot,
                         Path file,
                         Map<String, Integer> totals,
@@ -193,29 +209,65 @@ public final class AnnotationScanner {
         boolean inChar = false;
         while (i < line.length()) {
             if (inBlockComment) {
-                int end = line.indexOf("*/", i);
-                if (end < 0) {
-                    return new CommentStripResult(out.toString(), true);
+                if (i + 1 < line.length() && line.charAt(i) == '*' && line.charAt(i + 1) == '/') {
+                    out.append("  ");
+                    i += 2;
+                    inBlockComment = false;
+                } else {
+                    out.append(' ');
+                    i++;
                 }
-                i = end + 2;
-                inBlockComment = false;
                 continue;
             }
 
             char c = line.charAt(i);
             char next = i + 1 < line.length() ? line.charAt(i + 1) : '\0';
+            if (inString) {
+                out.append(' ');
+                if (c == '\\' && i + 1 < line.length()) {
+                    out.append(' ');
+                    i += 2;
+                    continue;
+                }
+                if (c == '"') {
+                    inString = false;
+                }
+                i++;
+                continue;
+            }
+            if (inChar) {
+                out.append(' ');
+                if (c == '\\' && i + 1 < line.length()) {
+                    out.append(' ');
+                    i += 2;
+                    continue;
+                }
+                if (c == '\'') {
+                    inChar = false;
+                }
+                i++;
+                continue;
+            }
             if (!inString && !inChar && c == '/' && next == '/') {
+                out.append(" ".repeat(line.length() - i));
                 break;
             }
             if (!inString && !inChar && c == '/' && next == '*') {
                 inBlockComment = true;
+                out.append("  ");
                 i += 2;
                 continue;
             }
-            if (!inChar && c == '"' && (i == 0 || line.charAt(i - 1) != '\\')) {
-                inString = !inString;
-            } else if (!inString && c == '\'' && (i == 0 || line.charAt(i - 1) != '\\')) {
-                inChar = !inChar;
+            if (c == '"') {
+                inString = true;
+                out.append(' ');
+                i++;
+                continue;
+            } else if (c == '\'') {
+                inChar = true;
+                out.append(' ');
+                i++;
+                continue;
             }
             out.append(c);
             i++;

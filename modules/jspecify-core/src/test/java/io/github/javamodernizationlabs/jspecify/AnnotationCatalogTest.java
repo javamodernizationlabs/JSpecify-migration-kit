@@ -39,14 +39,19 @@ class AnnotationCatalogTest {
                 "io.micrometer.common.lang.NonNull",
                 "edu.umd.cs.findbugs.annotations.NonNull",
                 "androidx.annotation.NonNull",
-                "org.checkerframework.checker.nullness.qual.NonNull",
-                "lombok.NonNull"
+                "org.checkerframework.checker.nullness.qual.NonNull"
         }) {
             assertEquals(AnnotationCatalog.JSPECIFY_NON_NULL,
                     catalog.mappings().get(legacy),
                     "Unexpected mapping for " + legacy);
             assertEquals(Nullness.NON_NULL, catalog.targetSemantics(legacy));
         }
+    }
+
+    @Test
+    void lombokNonNullIsNotTreatedAsSafeSubstitution() {
+        assertTrue(!AnnotationCatalog.defaults().mappings().containsKey("lombok.NonNull"));
+        assertEquals(Nullness.UNKNOWN, AnnotationCatalog.defaults().targetSemantics("lombok.NonNull"));
     }
 
     @Test

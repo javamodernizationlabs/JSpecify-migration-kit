@@ -4,8 +4,6 @@ import io.github.javamodernizationlabs.jspecify.Issue;
 import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -93,8 +91,7 @@ public final class HtmlReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, render(plan), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, render(plan));
     }
 
     private String escape(String raw) {

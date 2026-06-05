@@ -21,7 +21,7 @@ import org.apache.maven.project.MavenProject;
 import java.io.File;
 
 /**
- * Implements the {@code jspecify:report} goal.
+ * Implements the {@code jspecify-migration:report} goal.
  *
  * <p>This goal scans the current Maven project for JSpecify nullness annotations and builds a
  * migration plan, then writes the plan to the configured output directory in JSON, Markdown, SARIF,
@@ -44,7 +44,7 @@ public class ReportMojo extends AbstractMojo {
     private File outputDirectory;
 
     /**
-     * Runs the {@code jspecify:report} goal.
+     * Runs the {@code jspecify-migration:report} goal.
      *
      * <p>Loads the JSpecify configuration, scans the project for nullness annotations, computes a
      * migration plan, and writes the plan reports to the configured output directory.
