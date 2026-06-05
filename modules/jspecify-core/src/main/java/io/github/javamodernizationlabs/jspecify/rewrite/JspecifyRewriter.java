@@ -171,10 +171,12 @@ public final class JspecifyRewriter {
         String dependency = file.getFileName().toString().endsWith(".kts")
                 ? "    compileOnly(\"org.jspecify:jspecify:1.0.0\")\n"
                 : "    compileOnly 'org.jspecify:jspecify:1.0.0'\n";
+        int dependenciesStart = topLevelBlockOpeningBrace(content, "dependencies");
         String updated;
-        if (content.contains("dependencies {")) {
-            updated = content.replaceFirst("dependencies\\s*\\{",
-                    "dependencies {\n" + dependency);
+        if (dependenciesStart >= 0) {
+            int insert = dependenciesStart + 1;
+            updated = content.substring(0, insert) + "\n" + dependency
+                    + content.substring(insert);
         } else {
             updated = content + "\n\ndependencies {\n" + dependency + "}\n";
         }
@@ -186,26 +188,43 @@ public final class JspecifyRewriter {
 
     private void addMavenDependency(Path file, boolean apply, List<RewriteChange> changes)
             throws IOException {
-        String content = Files.readString(file, StandardCharsets.UTF_8);
-        if (content.contains("<artifactId>jspecify</artifactId>")) {
-            return;
+        try {
+            var factory = DocumentBuilderFactory.newInstance();
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            var document = factory.newDocumentBuilder().parse(file.toFile());
+            var projectElement = document.getDocumentElement();
+            org.w3c.dom.Element dependencies = directChild(projectElement, "dependencies");
+            if (dependencies != null && hasDependency(dependencies, "org.jspecify", "jspecify")) {
+                return;
+            }
+            if (dependencies == null) {
+                dependencies = document.createElement("dependencies");
+                projectElement.appendChild(document.createTextNode("\n  "));
+                projectElement.appendChild(dependencies);
+                projectElement.appendChild(document.createTextNode("\n"));
+            }
+            org.w3c.dom.Element dependency = document.createElement("dependency");
+            appendTextElement(document, dependency, "groupId", "org.jspecify");
+            appendTextElement(document, dependency, "artifactId", "jspecify");
+            appendTextElement(document, dependency, "version", "1.0.0");
+            appendTextElement(document, dependency, "scope", "provided");
+            dependency.appendChild(document.createTextNode("\n    "));
+            dependencies.appendChild(document.createTextNode("\n    "));
+            dependencies.appendChild(dependency);
+            dependencies.appendChild(document.createTextNode("\n  "));
+            if (apply) {
+                var transformer = TransformerFactory.newInstance().newTransformer();
+                transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+                transformer.setOutputProperty(OutputKeys.ENCODING, "UTF-8");
+                transformer.transform(new DOMSource(document), new StreamResult(file.toFile()));
+            }
+            changes.add(new RewriteChange(file, "Add provided-scope JSpecify dependency",
+                    1, List.of()));
+        } catch (Exception e) {
+            throw new IOException("Unable to add Maven JSpecify dependency to " + file, e);
         }
-        String dependency = """
-                  <dependency>
-                    <groupId>org.jspecify</groupId>
-                    <artifactId>jspecify</artifactId>
-                    <version>1.0.0</version>
-                    <scope>provided</scope>
-                  </dependency>
-                """;
-        String updated = content.contains("<dependencies>")
-                ? content.replaceFirst("<dependencies>", "<dependencies>\n" + dependency)
-                : content.replaceFirst("</project>", "  <dependencies>\n" + dependency
-                + "  </dependencies>\n</project>");
-        if (apply) {
-            Files.writeString(file, updated, StandardCharsets.UTF_8);
-        }
-        changes.add(new RewriteChange(file, "Add provided-scope JSpecify dependency", 1, List.of()));
     }
 
     private void convertKnownAnnotations(ProjectModel project,
@@ -216,7 +235,7 @@ public final class JspecifyRewriter {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> files = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -241,6 +260,7 @@ public final class JspecifyRewriter {
         for (var mapping : catalog.mappings().entrySet()) {
             String source = mapping.getKey();
             String target = mapping.getValue();
+            boolean sourceImported = importsAnnotation(content, source);
             Pattern sourcePattern = Pattern.compile("\\b" + Pattern.quote(source) + "\\b");
             int before = occurrences(sourcePattern, updated);
             if (before > 0) {
@@ -252,11 +272,17 @@ public final class JspecifyRewriter {
             String targetSimple = target.substring(target.lastIndexOf('.') + 1);
             Pattern importPattern = Pattern.compile("import\\s+"
                     + Pattern.quote(target) + "\\s*;");
-            if (importPattern.matcher(updated).find()) {
-                updated = updated.replaceAll("@" + Pattern.quote(sourceSimple) + "\\b",
-                        Matcher.quoteReplacement("@" + targetSimple));
+            if (sourceImported && importPattern.matcher(updated).find()) {
+                Pattern simplePattern = Pattern.compile("@" + Pattern.quote(sourceSimple) + "\\b");
+                int simpleBefore = occurrences(simplePattern, updated);
+                if (simpleBefore > 0) {
+                    updated = simplePattern.matcher(updated)
+                            .replaceAll(Matcher.quoteReplacement("@" + targetSimple));
+                    replacements += simpleBefore;
+                }
             }
         }
+        updated = deduplicateImports(updated);
 
         if (replacements > 0) {
             if (apply) {
@@ -363,7 +389,7 @@ public final class JspecifyRewriter {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> files = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -394,6 +420,10 @@ public final class JspecifyRewriter {
         if (Files.isRegularFile(gradleKts)) {
             removeGradleLegacyDependencies(gradleKts, apply, changes);
         }
+        Path gradleGroovy = project.rootDirectory().resolve("build.gradle");
+        if (Files.isRegularFile(gradleGroovy)) {
+            removeGradleLegacyDependencies(gradleGroovy, apply, changes);
+        }
         Path pom = project.rootDirectory().resolve("pom.xml");
         if (Files.isRegularFile(pom)) {
             removeMavenLegacyDependencies(pom, apply, changes);
@@ -405,7 +435,7 @@ public final class JspecifyRewriter {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> files = stream
                         .filter(Files::isRegularFile)
                         .filter(p -> p.toString().endsWith(".java"))
@@ -426,23 +456,27 @@ public final class JspecifyRewriter {
     private void removeGradleLegacyDependencies(Path buildFile,
                                                 boolean apply,
                                                 List<RewriteChange> changes) throws IOException {
-        List<String> lines = Files.readAllLines(buildFile, StandardCharsets.UTF_8);
-        List<String> kept = new ArrayList<>();
+        String content = Files.readString(buildFile, StandardCharsets.UTF_8);
+        Matcher lines = Pattern.compile(".*(?:\\R|\\z)").matcher(content);
+        StringBuilder kept = new StringBuilder(content.length());
         int removed = 0;
-        for (String line : lines) {
+        while (lines.find()) {
+            String line = lines.group();
+            if (line.isEmpty()) {
+                continue;
+            }
             if (line.contains("org.jetbrains:annotations")
                     || line.contains("com.google.code.findbugs:jsr305")
                     || line.contains("javax.annotation:javax.annotation-api")
                     || line.contains("jakarta.annotation:jakarta.annotation-api")) {
                 removed++;
             } else {
-                kept.add(line);
+                kept.append(line);
             }
         }
         if (removed > 0) {
             if (apply) {
-                Files.writeString(buildFile, String.join(System.lineSeparator(), kept)
-                        + System.lineSeparator(), StandardCharsets.UTF_8);
+                Files.writeString(buildFile, kept.toString(), StandardCharsets.UTF_8);
             }
             changes.add(new RewriteChange(buildFile, "Remove legacy annotation dependencies",
                     removed, List.of()));
@@ -500,6 +534,131 @@ public final class JspecifyRewriter {
         return "";
     }
 
+    private int topLevelBlockOpeningBrace(String content, String blockName) {
+        Pattern block = Pattern.compile("\\b" + Pattern.quote(blockName) + "\\s*\\{");
+        Matcher matcher = block.matcher(content);
+        while (matcher.find()) {
+            if (braceDepth(content, matcher.start()) == 0) {
+                return matcher.end() - 1;
+            }
+        }
+        return -1;
+    }
+
+    private int braceDepth(String content, int endExclusive) {
+        int depth = 0;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        boolean inString = false;
+        char stringDelimiter = '\0';
+        for (int i = 0; i < endExclusive; i++) {
+            char c = content.charAt(i);
+            char next = i + 1 < endExclusive ? content.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n' || c == '\r') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    i++;
+                }
+                continue;
+            }
+            if (inString) {
+                if (c == '\\' && i + 1 < endExclusive) {
+                    i++;
+                } else if (c == stringDelimiter) {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '/' && next == '/') {
+                inLineComment = true;
+                i++;
+            } else if (c == '/' && next == '*') {
+                inBlockComment = true;
+                i++;
+            } else if (c == '"' || c == '\'') {
+                inString = true;
+                stringDelimiter = c;
+            } else if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth = Math.max(0, depth - 1);
+            }
+        }
+        return depth;
+    }
+
+    private boolean importsAnnotation(String content, String annotation) {
+        String packageName = annotation.substring(0, annotation.lastIndexOf('.'));
+        return Pattern.compile("(?m)^\\s*import\\s+" + Pattern.quote(annotation) + "\\s*;")
+                .matcher(content).find()
+                || Pattern.compile("(?m)^\\s*import\\s+" + Pattern.quote(packageName)
+                + "\\.\\*\\s*;").matcher(content).find();
+    }
+
+    private String deduplicateImports(String content) {
+        Set<String> seenImports = new LinkedHashSet<>();
+        StringBuilder out = new StringBuilder(content.length());
+        Matcher lines = Pattern.compile(".*(?:\\R|\\z)").matcher(content);
+        while (lines.find()) {
+            String line = lines.group();
+            if (line.isEmpty()) {
+                continue;
+            }
+            Matcher importMatcher = Pattern.compile(
+                    "^\\s*import\\s+(org\\.jspecify\\.annotations\\.[\\w]+)\\s*;")
+                    .matcher(line.stripTrailing());
+            if (importMatcher.find() && !seenImports.add(importMatcher.group(1))) {
+                continue;
+            }
+            out.append(line);
+        }
+        return out.toString();
+    }
+
+    private org.w3c.dom.Element directChild(org.w3c.dom.Element parent, String name) {
+        var children = parent.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            org.w3c.dom.Node child = children.item(i);
+            if (child.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE
+                    && child.getNodeName().equals(name)) {
+                return (org.w3c.dom.Element) child;
+            }
+        }
+        return null;
+    }
+
+    private boolean hasDependency(org.w3c.dom.Element dependencies,
+                                  String groupId,
+                                  String artifactId) {
+        var children = dependencies.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            org.w3c.dom.Node child = children.item(i);
+            if (child.getNodeType() == org.w3c.dom.Node.ELEMENT_NODE
+                    && child.getNodeName().equals("dependency")
+                    && childText(child, "groupId").equals(groupId)
+                    && childText(child, "artifactId").equals(artifactId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void appendTextElement(org.w3c.dom.Document document,
+                                   org.w3c.dom.Element parent,
+                                   String name,
+                                   String text) {
+        parent.appendChild(document.createTextNode("\n      "));
+        org.w3c.dom.Element child = document.createElement(name);
+        child.setTextContent(text);
+        parent.appendChild(child);
+    }
+
     private boolean isLegacyAnnotationDependency(String groupId, String artifactId) {
         return (groupId.equals("org.jetbrains") && artifactId.equals("annotations"))
                 || (groupId.equals("com.google.code.findbugs") && artifactId.equals("jsr305"))
@@ -514,7 +673,7 @@ public final class JspecifyRewriter {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 Iterable<Path> files = stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)

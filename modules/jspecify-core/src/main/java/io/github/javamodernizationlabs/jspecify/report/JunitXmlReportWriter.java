@@ -5,8 +5,6 @@ import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 import io.github.javamodernizationlabs.jspecify.Severity;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -68,16 +66,31 @@ public final class JunitXmlReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, render(plan), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, render(plan));
     }
 
     private String escape(String raw) {
-        return raw == null ? "" : raw
+        return sanitizeXml(raw)
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&apos;");
+    }
+
+    private String sanitizeXml(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c == '\t' || c == '\n' || c == '\r'
+                    || (c >= 0x20 && c <= 0xD7FF)
+                    || (c >= 0xE000 && c <= 0xFFFD)) {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 }

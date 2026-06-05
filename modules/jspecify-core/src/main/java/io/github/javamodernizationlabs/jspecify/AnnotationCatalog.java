@@ -108,7 +108,6 @@ public final class AnnotationCatalog {
         m.put("com.android.annotations.NonNull", JSPECIFY_NON_NULL);
         m.put("org.checkerframework.checker.nullness.qual.NonNull", JSPECIFY_NON_NULL);
         m.put("io.reactivex.rxjava3.annotations.NonNull", JSPECIFY_NON_NULL);
-        m.put("lombok.NonNull", JSPECIFY_NON_NULL);
         m.put("reactor.util.annotation.NonNull", JSPECIFY_NON_NULL);
         return Map.copyOf(m);
     }

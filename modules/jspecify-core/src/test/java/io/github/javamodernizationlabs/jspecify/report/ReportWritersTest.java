@@ -7,13 +7,18 @@ import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 import io.github.javamodernizationlabs.jspecify.Recommendation;
 import io.github.javamodernizationlabs.jspecify.Severity;
 import io.github.javamodernizationlabs.jspecify.coverage.CoverageSummary;
+import io.github.javamodernizationlabs.jspecify.rewrite.RewriteChange;
+import io.github.javamodernizationlabs.jspecify.rewrite.RewriteResult;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReportWritersTest {
@@ -51,6 +56,7 @@ class ReportWritersTest {
         String md = new MarkdownReportWriter().render(plan);
         assertTrue(md.contains("# JSpecify Migration Plan"));
         assertTrue(md.contains("org.jetbrains.annotations.Nullable"));
+        assertFalse(md.contains("   ```"));
 
         String sarif = new SarifReportWriter().render(plan);
         assertTrue(sarif.contains("\"version\":\"2.1.0\""));
@@ -77,5 +83,90 @@ class ReportWritersTest {
         String html = new CoverageReportWriter().html(summary);
         assertTrue(html.contains("<!doctype html>"));
         assertTrue(html.contains("JSpecify Coverage"));
+    }
+
+    @Test
+    void issueFingerprintsNormalizeSeparatorsAndIncludeColumn() {
+        Issue windowsPath = issue(Path.of("src\\Api.java"), 10, 3, "Same");
+        Issue slashPath = issue(Path.of("src/Api.java"), 10, 3, "Same");
+        Issue differentColumn = issue(Path.of("src/Api.java"), 10, 4, "Same");
+
+        assertEquals(slashPath.fingerprint(), windowsPath.fingerprint());
+        assertTrue(!slashPath.fingerprint().equals(differentColumn.fingerprint()));
+    }
+
+    @Test
+    void sarifUrisUseForwardSlashesAndNonEmptyUnknownLocation() {
+        var plan = planWithIssues(List.of(
+                issue(Path.of("src\\Api.java"), 10, 3, "Message"),
+                Issue.builder()
+                        .ruleId("jspecify.old-nullness-annotation")
+                        .severity(Severity.MEDIUM)
+                        .message("Unknown")
+                        .location(Location.none())
+                        .recommendation(Recommendation.of("Fix."))
+                        .build()));
+
+        String sarif = new SarifReportWriter().render(plan);
+
+        assertTrue(sarif.contains("\"uri\":\"src/Api.java\""));
+        assertTrue(sarif.contains("\"uri\":\"unknown\""));
+    }
+
+    @Test
+    void coveragePercentagesAreLocaleIndependent() {
+        Locale previous = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            Locale.setDefault(Locale.Category.FORMAT, Locale.GERMANY);
+            String markdown = new CoverageReportWriter()
+                    .markdown(new CoverageSummary(4, 3, 1, 2, 0,
+                            2, 1, 2, 1, 2, 1, 0));
+
+            assertTrue(markdown.contains("75.0%"));
+            assertFalse(markdown.contains("75,0%"));
+        } finally {
+            Locale.setDefault(Locale.Category.FORMAT, previous);
+        }
+    }
+
+    @Test
+    void junitXmlDropsInvalidControlCharacters() {
+        Issue issue = issue(Path.of("Api.java"), 1, 1, "bad\u0000message");
+
+        String junit = new JunitXmlReportWriter().render(planWithIssues(List.of(issue)));
+
+        assertFalse(junit.contains("\u0000"));
+        assertTrue(junit.contains("badmessage"));
+    }
+
+    @Test
+    void rewriteMarkdownEscapesFreeText() {
+        RewriteResult result = new RewriteResult(false,
+                List.of(new RewriteChange(Path.of("src/A|B`C.java"),
+                        "Convert | risky\ntext", 1, List.of("warn | here\nnext"))),
+                List.of("top | warning"));
+
+        String markdown = new RewriteReportWriter().markdown(result);
+
+        assertTrue(markdown.contains("A\\|B'C.java"));
+        assertTrue(markdown.contains("Convert \\| risky text"));
+        assertTrue(markdown.contains("warn \\| here next"));
+        assertTrue(markdown.contains("top \\| warning"));
+    }
+
+    private Issue issue(Path path, int line, int column, String message) {
+        return Issue.builder()
+                .ruleId("jspecify.old-nullness-annotation")
+                .severity(Severity.MEDIUM)
+                .title("Issue")
+                .message(message)
+                .location(new Location(path, line, column, line, column + 1))
+                .recommendation(Recommendation.of("Fix."))
+                .build();
+    }
+
+    private MigrationPlan planWithIssues(List<Issue> issues) {
+        return new MigrationPlan(AnnotationInventory.empty(), List.of(),
+                MigrationPlan.Risk.LOW, issues);
     }
 }

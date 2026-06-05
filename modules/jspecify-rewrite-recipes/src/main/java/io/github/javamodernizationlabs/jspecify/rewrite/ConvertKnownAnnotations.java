@@ -44,8 +44,8 @@ public class ConvertKnownAnnotations extends Recipe {
     public String getDescription() {
         return "Rewrites imports and references of well-known legacy nullness annotations "
                 + "(JetBrains, JSR-305, Spring, FindBugs, Checker Framework, etc.) to their "
-                + "JSpecify counterparts. Ambiguous declaration-vs-type-use placements are "
-                + "left unchanged and reported instead.";
+                + "JSpecify counterparts. Run FixTypeUseAnnotationPlacement first when you "
+                + "need to inventory ambiguous declaration-vs-type-use placements.";
     }
 
     /**

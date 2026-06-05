@@ -22,7 +22,7 @@ import org.apache.maven.project.MavenProject;
 import java.io.File;
 
 /**
- * Implements the {@code jspecify:plan} goal.
+ * Implements the {@code jspecify-migration:plan} goal.
  *
  * <p>This goal scans the current Maven project for JSpecify nullness annotations, builds a
  * migration plan from the resulting inventory, and prints a summary to the console. It also writes
@@ -46,7 +46,7 @@ public class PlanMojo extends AbstractMojo {
     private File outputDirectory;
 
     /**
-     * Runs the {@code jspecify:plan} goal.
+     * Runs the {@code jspecify-migration:plan} goal.
      *
      * <p>Loads the JSpecify configuration, scans the project for nullness annotations, computes a
      * migration plan, prints a console summary, and writes the plan reports to the configured

@@ -1,5 +1,6 @@
 package io.github.javamodernizationlabs.jspecify.gradle;
 
+import io.github.javamodernizationlabs.jspecify.AnnotationCatalog;
 import io.github.javamodernizationlabs.jspecify.ProjectModel;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfig;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfigLoader;
@@ -72,8 +73,8 @@ public abstract class JspecifyRewriteHintTask extends DefaultTask {
         String recipe = getRecipe().getOrElse("io.github.jml.jspecify.Migrate");
         var projectRoot = getProject().getProjectDir().toPath();
         JspecifyConfig config = JspecifyConfigLoader.load(projectRoot);
-        var result = new JspecifyRewriter().rewrite(ProjectModel.of(projectRoot, config),
-                List.of(recipe), apply);
+        var result = new JspecifyRewriter(new AnnotationCatalog(config.annotationMappings()))
+                .rewrite(ProjectModel.of(projectRoot, config), List.of(recipe), apply);
         var report = getOutputDirectory().getAsFile().get().toPath().resolve("rewrite.md");
         new RewriteReportWriter().write(report, result);
         getLogger().lifecycle("JSpecify rewrite {}: {} files, {} replacements",

@@ -7,10 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Small YAML reader for the documented jml.yml/jspecify.yml surface.
@@ -57,8 +59,10 @@ public final class JspecifyConfigLoader {
     private static void parse(List<String> lines, ConfigBuilder builder) {
         List<String> path = new ArrayList<>();
         String listTarget = "";
+        Set<String> clearedBlockLists = new HashSet<>();
 
         for (String rawLine : lines) {
+            rejectTabIndent(rawLine);
             String withoutComment = stripComment(rawLine);
             if (withoutComment.isBlank()) {
                 continue;
@@ -71,26 +75,10 @@ public final class JspecifyConfigLoader {
 
             if (line.startsWith("- ")) {
                 String value = unquote(line.substring(2).trim());
-                if (listTarget.equals("reports.formats")) {
-                    builder.reportFormats.add(value);
-                } else if (listTarget.equals("migration.generatedCode.patterns")
-                        && builder.generatedCodeExclude) {
-                    builder.generatedCodeExcludes.add(value);
-                } else if (listTarget.equals("sourceRoots")) {
-                    builder.sourceRoots.add(Path.of(value));
-                } else if (listTarget.equals("packagePolicy.markPackages")) {
-                    builder.markPackages.add(value);
-                } else if (listTarget.equals("packagePolicy.leaveUnmarked")) {
-                    builder.leaveUnmarkedPackages.add(value);
-                } else if (listTarget.equals("publicApi.include")) {
-                    builder.publicApiIncludes.add(value);
-                } else if (listTarget.equals("publicApi.exclude")) {
-                    builder.publicApiExcludes.add(value);
-                } else if (listTarget.equals("nullaway.annotatedPackages")) {
-                    builder.nullawayAnnotatedPackages.add(value);
-                } else if (listTarget.equals("nullaway.excludedClasses")) {
-                    builder.nullawayExcludedClasses.add(value);
+                if (clearedBlockLists.add(listTarget)) {
+                    clearList(listTarget, builder);
                 }
+                addListValue(listTarget, value, builder);
                 continue;
             }
 
@@ -113,28 +101,28 @@ public final class JspecifyConfigLoader {
 
             if (dotted.equals("jspecify.version")) {
                 builder.jspecifyVersion = unquote(value);
-            } else if (dotted.equals("reports.formats")) {
-                builder.reportFormats.clear();
-                builder.reportFormats.addAll(parseInlineList(value));
             } else if (dotted.equals("reports.outputDirectory")) {
                 builder.reportsOutputDirectory = Path.of(unquote(value));
             } else if (dotted.equals("migration.generatedCode.exclude")) {
-                builder.generatedCodeExclude = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.generatedCodeExclude = parseBoolean(value);
                 if (!builder.generatedCodeExclude) {
                     builder.generatedCodeExcludes.clear();
                 }
+            } else if (isListKey(dotted)) {
+                clearList(dotted, builder);
+                parseInlineList(value).forEach(item -> addListValue(dotted, item, builder));
             } else if (dotted.equals("scanner.followSymlinks")) {
-                builder.followSymlinks = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.followSymlinks = parseBoolean(value);
             } else if (dotted.equals("publicApi.jpmsExportsOnly")) {
-                builder.publicApiJpmsExportsOnly = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.publicApiJpmsExportsOnly = parseBoolean(value);
             } else if (dotted.equals("nullaway.enabled")) {
-                builder.nullawayEnabled = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.nullawayEnabled = parseBoolean(value);
             } else if (dotted.equals("nullaway.mode")) {
                 builder.nullawayMode = unquote(value);
             } else if (dotted.equals("kotlinVerification.enabled")) {
-                builder.kotlinVerificationEnabled = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.kotlinVerificationEnabled = parseBoolean(value);
             } else if (dotted.equals("kotlinVerification.failOnWarnings")) {
-                builder.kotlinVerificationFailOnWarnings = Boolean.parseBoolean(value.toLowerCase(Locale.ROOT));
+                builder.kotlinVerificationFailOnWarnings = parseBoolean(value);
             } else if (dotted.equals("kotlinVerification.generatedTestsDirectory")) {
                 builder.kotlinVerificationGeneratedTestsDirectory = Path.of(unquote(value));
             } else if (dotted.startsWith("annotations.mappings.")) {
@@ -145,17 +133,34 @@ public final class JspecifyConfigLoader {
     }
 
     private static String stripComment(String line) {
-        boolean quoted = false;
+        char quote = '\0';
         for (int i = 0; i < line.length(); i++) {
             char c = line.charAt(i);
-            if (c == '"') {
-                quoted = !quoted;
+            if ((c == '"' || c == '\'') && (i == 0 || line.charAt(i - 1) != '\\')) {
+                if (quote == '\0') {
+                    quote = c;
+                } else if (quote == c) {
+                    quote = '\0';
+                }
             }
-            if (c == '#' && !quoted) {
+            if (c == '#' && quote == '\0') {
                 return line.substring(0, i);
             }
         }
         return line;
+    }
+
+    private static void rejectTabIndent(String line) {
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '\t') {
+                throw new IllegalArgumentException("Tabs are not supported for indentation "
+                        + "in JSpecify configuration.");
+            }
+            if (!Character.isWhitespace(c)) {
+                return;
+            }
+        }
     }
 
     private static int countIndent(String line) {
@@ -186,6 +191,62 @@ public final class JspecifyConfigLoader {
             result.add(unquote(token.trim()));
         }
         return result;
+    }
+
+    private static boolean parseBoolean(String value) {
+        return Boolean.parseBoolean(unquote(value).toLowerCase(Locale.ROOT));
+    }
+
+    private static boolean isListKey(String dotted) {
+        return dotted.equals("reports.formats")
+                || dotted.equals("migration.generatedCode.patterns")
+                || dotted.equals("sourceRoots")
+                || dotted.equals("packagePolicy.markPackages")
+                || dotted.equals("packagePolicy.leaveUnmarked")
+                || dotted.equals("publicApi.include")
+                || dotted.equals("publicApi.exclude")
+                || dotted.equals("nullaway.annotatedPackages")
+                || dotted.equals("nullaway.excludedClasses");
+    }
+
+    private static void clearList(String target, ConfigBuilder builder) {
+        switch (target) {
+            case "reports.formats" -> builder.reportFormats.clear();
+            case "migration.generatedCode.patterns" -> {
+                if (builder.generatedCodeExclude) {
+                    builder.generatedCodeExcludes.clear();
+                }
+            }
+            case "sourceRoots" -> builder.sourceRoots.clear();
+            case "packagePolicy.markPackages" -> builder.markPackages.clear();
+            case "packagePolicy.leaveUnmarked" -> builder.leaveUnmarkedPackages.clear();
+            case "publicApi.include" -> builder.publicApiIncludes.clear();
+            case "publicApi.exclude" -> builder.publicApiExcludes.clear();
+            case "nullaway.annotatedPackages" -> builder.nullawayAnnotatedPackages.clear();
+            case "nullaway.excludedClasses" -> builder.nullawayExcludedClasses.clear();
+            default -> {
+            }
+        }
+    }
+
+    private static void addListValue(String target, String value, ConfigBuilder builder) {
+        switch (target) {
+            case "reports.formats" -> builder.reportFormats.add(value);
+            case "migration.generatedCode.patterns" -> {
+                if (builder.generatedCodeExclude) {
+                    builder.generatedCodeExcludes.add(value);
+                }
+            }
+            case "sourceRoots" -> builder.sourceRoots.add(Path.of(value));
+            case "packagePolicy.markPackages" -> builder.markPackages.add(value);
+            case "packagePolicy.leaveUnmarked" -> builder.leaveUnmarkedPackages.add(value);
+            case "publicApi.include" -> builder.publicApiIncludes.add(value);
+            case "publicApi.exclude" -> builder.publicApiExcludes.add(value);
+            case "nullaway.annotatedPackages" -> builder.nullawayAnnotatedPackages.add(value);
+            case "nullaway.excludedClasses" -> builder.nullawayExcludedClasses.add(value);
+            default -> {
+            }
+        }
     }
 
     private static String unquote(String value) {

@@ -5,15 +5,20 @@ import io.github.javamodernizationlabs.jspecify.config.JspecifyConfig;
 import io.github.javamodernizationlabs.jspecify.config.JspecifyConfigLoader;
 import io.github.javamodernizationlabs.jspecify.kotlin.KotlinInteropVerifier;
 import org.gradle.api.DefaultTask;
+import org.gradle.api.GradleException;
 import org.gradle.api.file.DirectoryProperty;
+import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
+import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.work.DisableCachingByDefault;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 /**
  * Gradle task that generates Kotlin interoperability verification artifacts.
@@ -92,11 +97,26 @@ public abstract class JspecifyVerifyKotlinTask extends DefaultTask {
                 output,
                 getKotlinVerificationEnabled().getOrElse(false),
                 getCompileSamples().getOrElse(false),
-                java.util.List.of(projectRoot.resolve("build/classes/java/main")));
+                mainJavaClasses(projectRoot));
         if (getFailOnWarnings().getOrElse(false) && !result.warnings().isEmpty()) {
-            throw new IOException("Kotlin verification warnings: "
+            throw new GradleException("Kotlin verification warnings: "
                     + String.join("; ", result.warnings()));
         }
         getLogger().lifecycle("JSpecify Kotlin verification report written to {}", output);
+    }
+
+    private List<Path> mainJavaClasses(Path projectRoot) {
+        JavaPluginExtension javaExtension = getProject().getExtensions()
+                .findByType(JavaPluginExtension.class);
+        if (javaExtension == null) {
+            return List.of(projectRoot.resolve("build/classes/java/main"));
+        }
+        SourceSet main = javaExtension.getSourceSets().findByName(SourceSet.MAIN_SOURCE_SET_NAME);
+        if (main == null) {
+            return List.of(projectRoot.resolve("build/classes/java/main"));
+        }
+        return main.getOutput().getClassesDirs().getFiles().stream()
+                .map(java.io.File::toPath)
+                .toList();
     }
 }

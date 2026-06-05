@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -64,6 +65,93 @@ class JspecifyRewriterTest {
 
         assertEquals(1, result.changedFiles());
         assertTrue(Files.readString(build).contains("compileOnly(\"org.jspecify:jspecify:1.0.0\")"));
+    }
+
+    @Test
+    void addsGradleDependencyOnlyToTopLevelDependencies(@TempDir Path tmp) throws IOException {
+        Path build = tmp.resolve("build.gradle");
+        Files.writeString(build,
+                """
+                buildscript {
+                    dependencies {
+                        classpath 'com.acme:plugin:1.0'
+                    }
+                }
+                plugins { id 'java' }
+                """);
+
+        new JspecifyRewriter()
+                .rewrite(ProjectModel.of(tmp), List.of("add-dependency"), true);
+
+        String updated = Files.readString(build);
+        int buildscript = updated.indexOf("buildscript");
+        int plugins = updated.indexOf("plugins");
+        int jspecify = updated.indexOf("compileOnly 'org.jspecify:jspecify:1.0.0'");
+        assertTrue(jspecify > plugins);
+        assertTrue(!updated.substring(buildscript, plugins).contains("org.jspecify:jspecify"));
+    }
+
+    @Test
+    void addsMavenDependencyOutsideDependencyManagement(@TempDir Path tmp) throws Exception {
+        Path pom = tmp.resolve("pom.xml");
+        Files.writeString(pom,
+                """
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <dependencyManagement>
+                    <dependencies>
+                      <dependency>
+                        <groupId>org.jspecify</groupId>
+                        <artifactId>jspecify-bom</artifactId>
+                        <version>1.0.0</version>
+                      </dependency>
+                    </dependencies>
+                  </dependencyManagement>
+                </project>
+                """);
+
+        new JspecifyRewriter()
+                .rewrite(ProjectModel.of(tmp), List.of("add-dependency"), true);
+
+        var document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(pom.toFile());
+        var project = document.getDocumentElement();
+        int directDependencies = 0;
+        var children = project.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            if (children.item(i).getNodeType() == org.w3c.dom.Node.ELEMENT_NODE
+                    && children.item(i).getNodeName().equals("dependencies")) {
+                directDependencies++;
+                assertTrue(children.item(i).getTextContent().contains("jspecify"));
+            }
+        }
+        assertEquals(1, directDependencies);
+    }
+
+    @Test
+    void deduplicatesJspecifyImportsWhenLegacyAnnotationsShareTarget(@TempDir Path tmp)
+            throws IOException {
+        Path source = tmp.resolve("src/main/java/com/acme/Api.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source,
+                """
+                package com.acme;
+                import org.jetbrains.annotations.Nullable;
+                import javax.annotation.CheckForNull;
+                class Api {
+                    @Nullable String one() { return null; }
+                    @CheckForNull String two() { return null; }
+                }
+                """);
+
+        RewriteResult result = new JspecifyRewriter()
+                .rewrite(ProjectModel.of(tmp), List.of("convert-known-annotations"), true);
+
+        String updated = Files.readString(source);
+        String jspecifyImport = "import org.jspecify.annotations.Nullable;";
+        assertEquals(updated.indexOf(jspecifyImport), updated.lastIndexOf(jspecifyImport));
+        assertTrue(!updated.contains("CheckForNull"));
+        assertTrue(updated.contains("@Nullable String two()"));
+        assertTrue(result.replacements() >= 4);
     }
 
     @Test
@@ -132,6 +220,29 @@ class JspecifyRewriterTest {
 
         assertEquals(1, result.changedFiles());
         assertTrue(!Files.readString(build).contains("org.jetbrains:annotations"));
+    }
+
+    @Test
+    void removesOldGroovyGradleDependenciesWithoutChangingTrailingNewline(@TempDir Path tmp)
+            throws IOException {
+        Path build = tmp.resolve("build.gradle");
+        Files.writeString(build,
+                "dependencies {\n"
+                        + "    compileOnly 'org.jetbrains:annotations:26.0.1'\n"
+                        + "    implementation 'com.acme:lib:1.0'\n"
+                        + "}");
+        Path source = tmp.resolve("src/main/java/com/acme/Api.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, "package com.acme; class Api {}\n");
+
+        new JspecifyRewriter()
+                .rewrite(ProjectModel.of(tmp),
+                        List.of("remove-old-annotation-dependencies"), true);
+
+        String updated = Files.readString(build);
+        assertTrue(!updated.contains("org.jetbrains:annotations"));
+        assertTrue(updated.contains("implementation 'com.acme:lib:1.0'"));
+        assertTrue(!updated.endsWith("\n"));
     }
 
     @Test

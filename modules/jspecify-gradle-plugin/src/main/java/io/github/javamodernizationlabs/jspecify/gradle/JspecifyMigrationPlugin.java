@@ -2,6 +2,9 @@ package io.github.javamodernizationlabs.jspecify.gradle;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.tasks.compile.JavaCompile;
+
+import java.util.Locale;
 
 /**
  * Gradle plugin that wires the JSpecify Migration Kit into a Gradle build.
@@ -104,6 +107,11 @@ public class JspecifyMigrationPlugin implements Plugin<Project> {
             t.getMode().set(extension.getNullaway().getMode());
             t.getAnnotatedPackages().set(extension.getNullaway().getAnnotatedPackages());
             t.getExcludedClasses().set(extension.getNullaway().getExcludedClasses());
+            t.getErrorProneConfigured().convention(project.provider(() -> hasErrorPronePlugin(project)
+                    || javaCompileArgsContain(project, "errorprone")
+                    || javaCompileArgsContain(project, "-xep:")));
+            t.getNullAwayConfigured().convention(project.provider(() -> hasDependency(project, "nullaway")
+                    || javaCompileArgsContain(project, "nullaway")));
             t.getOutputDirectory().set(extension.getReportsDirectory());
         });
 
@@ -116,6 +124,32 @@ public class JspecifyMigrationPlugin implements Plugin<Project> {
             t.getFailOnWarnings().set(extension.getKotlinVerification().getFailOnWarnings());
             t.getOutputDirectory().set(extension.getReportsDirectory()
                     .map(dir -> dir.dir("kotlin-verification")));
+            t.dependsOn(project.getTasks().matching(task -> task.getName().equals("compileJava")));
         });
+    }
+
+    private static boolean hasErrorPronePlugin(Project project) {
+        return project.getPlugins().hasPlugin("net.ltgt.errorprone")
+                || project.getPlugins().hasPlugin("net.ltgt.errorprone-base");
+    }
+
+    private static boolean hasDependency(Project project, String token) {
+        String lower = token.toLowerCase(Locale.ROOT);
+        return project.getConfigurations().stream()
+                .flatMap(configuration -> configuration.getDependencies().stream())
+                .anyMatch(dependency -> containsIgnoreCase(dependency.getGroup(), lower)
+                        || containsIgnoreCase(dependency.getName(), lower));
+    }
+
+    private static boolean javaCompileArgsContain(Project project, String token) {
+        String lower = token.toLowerCase(Locale.ROOT);
+        return project.getTasks().withType(JavaCompile.class).stream()
+                .flatMap(task -> task.getOptions().getCompilerArgs().stream())
+                .map(arg -> arg.toLowerCase(Locale.ROOT))
+                .anyMatch(arg -> arg.contains(lower));
+    }
+
+    private static boolean containsIgnoreCase(String value, String lowerToken) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(lowerToken);
     }
 }

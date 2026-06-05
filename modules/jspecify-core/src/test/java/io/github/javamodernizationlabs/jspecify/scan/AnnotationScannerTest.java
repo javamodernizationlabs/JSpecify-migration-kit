@@ -8,8 +8,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -89,6 +91,65 @@ class AnnotationScannerTest {
     }
 
     @Test
+    void ignoresAnnotationsInStringAndCharacterLiterals(@TempDir Path tmp) throws IOException {
+        Path mainJava = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(mainJava);
+        Files.writeString(mainJava.resolve("Api.java"),
+                """
+                package com.acme;
+                import org.jetbrains.annotations.Nullable;
+                class Api {
+                    String text = "do not count @Nullable here";
+                    char marker = '@';
+                }
+                """);
+
+        AnnotationInventory inv = new AnnotationScanner().scan(ProjectModel.of(tmp));
+
+        assertEquals(0, inv.totalAnnotations());
+    }
+
+    @Test
+    void preservesColumnsAfterInlineBlockComments(@TempDir Path tmp) throws IOException {
+        Path mainJava = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(mainJava);
+        Files.writeString(mainJava.resolve("Api.java"),
+                """
+                package com.acme;
+                import org.jetbrains.annotations.Nullable;
+                class Api {
+                    /* ignored */ @Nullable String name;
+                }
+                """);
+
+        AnnotationInventory inv = new AnnotationScanner().scan(ProjectModel.of(tmp));
+
+        assertEquals(19, inv.locationsByAnnotation()
+                .get("org.jetbrains.annotations.Nullable").getFirst().startColumn());
+    }
+
+    @Test
+    void ignoresImportsInCommentsAndAmbiguousSimpleNameCollisions(@TempDir Path tmp)
+            throws IOException {
+        Path mainJava = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(mainJava);
+        Files.writeString(mainJava.resolve("Api.java"),
+                """
+                package com.acme;
+                /*
+                import org.jetbrains.annotations.Nullable;
+                */
+                import javax.annotation.Nullable;
+                import jakarta.annotation.Nullable;
+                class Api { @Nullable String name; }
+                """);
+
+        AnnotationInventory inv = new AnnotationScanner().scan(ProjectModel.of(tmp));
+
+        assertEquals(0, inv.totalAnnotations());
+    }
+
+    @Test
     void forConfigHonorsCustomAnnotationMappings(@TempDir Path tmp) throws IOException {
         Files.writeString(tmp.resolve("jspecify.yml"),
                 """
@@ -134,5 +195,29 @@ class AnnotationScannerTest {
         assertEquals(1,
                 inv.totalByAnnotation().get("org.jetbrains.annotations.Nullable"));
         assertEquals(1, inv.filesScanned());
+    }
+
+    @Test
+    void followsSymlinkSourceRootsWhenEnabled(@TempDir Path tmp) throws IOException {
+        Path realRoot = tmp.resolve("real-src/com/acme");
+        Files.createDirectories(realRoot);
+        Files.writeString(realRoot.resolve("Api.java"),
+                """
+                package com.acme;
+                import org.jetbrains.annotations.Nullable;
+                class Api { @Nullable String name() { return null; } }
+                """);
+        Path symlinkRoot = tmp.resolve("linked-src");
+        try {
+            Files.createSymbolicLink(symlinkRoot, tmp.resolve("real-src"));
+        } catch (UnsupportedOperationException | FileSystemException e) {
+            return;
+        }
+
+        AnnotationInventory inv = new AnnotationScanner().scan(
+                ProjectModel.of(tmp, List.of(symlinkRoot), List.of(), true));
+
+        assertEquals(1,
+                inv.totalByAnnotation().get("org.jetbrains.annotations.Nullable"));
     }
 }

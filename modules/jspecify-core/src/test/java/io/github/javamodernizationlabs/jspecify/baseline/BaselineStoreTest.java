@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BaselineStoreTest {
 
@@ -31,5 +32,13 @@ class BaselineStoreTest {
 
         assertEquals(1, store.read(baseline).size());
         assertEquals(0, store.newIssues(List.of(issue), baseline).size());
+    }
+
+    @Test
+    void rejectsInvalidBaselineShape(@TempDir Path tmp) throws Exception {
+        Path baseline = tmp.resolve("baseline.json");
+        java.nio.file.Files.writeString(baseline, "{\"fingerprint\":\"sha256:old\"}");
+
+        assertThrows(java.io.IOException.class, () -> new BaselineStore().read(baseline));
     }
 }

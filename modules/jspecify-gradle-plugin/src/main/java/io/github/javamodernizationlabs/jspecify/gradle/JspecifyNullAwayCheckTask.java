@@ -8,14 +8,12 @@ import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.work.DisableCachingByDefault;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Gradle task that generates NullAway/Error Prone configuration for the JSpecify migration.
@@ -67,6 +65,22 @@ public abstract class JspecifyNullAwayCheckTask extends DefaultTask {
     public abstract ListProperty<String> getExcludedClasses();
 
     /**
+     * Whether Error Prone wiring was detected during task configuration.
+     *
+     * @return a {@code Property<Boolean>} that is {@code true} when Error Prone is configured
+     */
+    @Input
+    public abstract Property<Boolean> getErrorProneConfigured();
+
+    /**
+     * Whether NullAway wiring was detected during task configuration.
+     *
+     * @return a {@code Property<Boolean>} that is {@code true} when NullAway is configured
+     */
+    @Input
+    public abstract Property<Boolean> getNullAwayConfigured();
+
+    /**
      * The directory into which the generated NullAway configuration and report are written.
      *
      * @return a {@link DirectoryProperty} pointing at the output directory
@@ -104,11 +118,8 @@ public abstract class JspecifyNullAwayCheckTask extends DefaultTask {
             throw new GradleException("JSpecify NullAway profile is enabled but no "
                     + "annotatedPackages are configured.");
         }
-        boolean errorProneConfigured = hasErrorPronePlugin()
-                || javaCompileArgsContain("errorprone")
-                || javaCompileArgsContain("-xep:");
-        boolean nullAwayConfigured = hasDependency("nullaway")
-                || javaCompileArgsContain("nullaway");
+        boolean errorProneConfigured = getErrorProneConfigured().getOrElse(false);
+        boolean nullAwayConfigured = getNullAwayConfigured().getOrElse(false);
         if (!errorProneConfigured || !nullAwayConfigured) {
             throw new GradleException("JSpecify NullAway profile is enabled but the project "
                     + "does not expose an executable Error Prone/NullAway setup. Apply an "
@@ -151,28 +162,4 @@ public abstract class JspecifyNullAwayCheckTask extends DefaultTask {
         getLogger().lifecycle("JSpecify NullAway profile verified; config written to {}", output);
     }
 
-    private boolean hasErrorPronePlugin() {
-        return getProject().getPlugins().hasPlugin("net.ltgt.errorprone")
-                || getProject().getPlugins().hasPlugin("net.ltgt.errorprone-base");
-    }
-
-    private boolean hasDependency(String token) {
-        String lower = token.toLowerCase(Locale.ROOT);
-        return getProject().getConfigurations().stream()
-                .flatMap(configuration -> configuration.getDependencies().stream())
-                .anyMatch(dependency -> containsIgnoreCase(dependency.getGroup(), lower)
-                        || containsIgnoreCase(dependency.getName(), lower));
-    }
-
-    private boolean javaCompileArgsContain(String token) {
-        String lower = token.toLowerCase(Locale.ROOT);
-        return getProject().getTasks().withType(JavaCompile.class).stream()
-                .flatMap(task -> task.getOptions().getCompilerArgs().stream())
-                .map(arg -> arg.toLowerCase(Locale.ROOT))
-                .anyMatch(arg -> arg.contains(lower));
-    }
-
-    private boolean containsIgnoreCase(String value, String lowerToken) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(lowerToken);
-    }
 }

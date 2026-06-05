@@ -45,15 +45,15 @@
       </configuration>
     </mojo>
     <mojo>
-      <goal>rewrite-dry-run</goal>
-      <description>Runs the JSpecify rewrite recipes without changing project files.</description>
+      <goal>rewrite-hint</goal>
+      <description>Runs the configured JSpecify rewrite recipes, optionally applying changes.</description>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
       <requiresReports>false</requiresReports>
       <aggregator>false</aggregator>
       <requiresOnline>false</requiresOnline>
       <inheritedByDefault>true</inheritedByDefault>
-      <implementation>io.github.javamodernizationlabs.jspecify.maven.RewriteDryRunMojo</implementation>
+      <implementation>io.github.javamodernizationlabs.jspecify.maven.RewriteHintMojo</implementation>
       <language>java</language>
       <instantiationStrategy>per-lookup</instantiationStrategy>
       <executionStrategy>once-per-session</executionStrategy>
@@ -96,6 +96,49 @@
       </configuration>
     </mojo>
     <mojo>
+      <goal>rewrite-dry-run</goal>
+      <description>Runs the JSpecify rewrite recipes without changing project files.</description>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <implementation>io.github.javamodernizationlabs.jspecify.maven.RewriteDryRunMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The current Maven project.</description>
+        </parameter>
+        <parameter>
+          <name>outputDirectory</name>
+          <type>java.io.File</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>Directory where JSpecify rewrite reports are written.</description>
+        </parameter>
+        <parameter>
+          <name>recipe</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>OpenRewrite recipe to execute.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <outputDirectory implementation="java.io.File" default-value="${project.build.directory}/reports/jml/jspecify">${jspecify.outputDirectory}</outputDirectory>
+        <recipe implementation="java.lang.String" default-value="io.github.jml.jspecify.Migrate">${jspecify.recipe}</recipe>
+      </configuration>
+    </mojo>
+    <mojo>
       <goal>rewrite-apply</goal>
       <description>Runs the JSpecify rewrite recipes and applies changes to project files.</description>
       <requiresDirectInvocation>false</requiresDirectInvocation>
@@ -131,19 +174,11 @@
           <editable>true</editable>
           <description>OpenRewrite recipe to execute.</description>
         </parameter>
-        <parameter>
-          <name>apply</name>
-          <type>boolean</type>
-          <required>false</required>
-          <editable>true</editable>
-          <description>Whether rewrite changes should be applied.</description>
-        </parameter>
       </parameters>
       <configuration>
         <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
         <outputDirectory implementation="java.io.File" default-value="${project.build.directory}/reports/jml/jspecify">${jspecify.outputDirectory}</outputDirectory>
         <recipe implementation="java.lang.String" default-value="io.github.jml.jspecify.Migrate">${jspecify.recipe}</recipe>
-        <apply implementation="boolean" default-value="true">${jspecify.apply}</apply>
       </configuration>
     </mojo>
     <mojo>

@@ -72,7 +72,7 @@ public final class CoverageAnalyzer {
             if (!Files.isDirectory(root)) {
                 continue;
             }
-            try (Stream<Path> stream = Files.walk(root)) {
+            try (Stream<Path> stream = project.walk(root)) {
                 stream
                         .filter(Files::isRegularFile)
                         .filter(project::shouldScan)
@@ -95,7 +95,8 @@ public final class CoverageAnalyzer {
                 packagesSeen.add(packageName);
             }
             if (file.getFileName().toString().equals("package-info.java")
-                    && hasNullMarked(lines) && !packageName.isBlank()) {
+                    && hasNullMarked(lines) && !packageName.isBlank()
+                    && isPublicApiPackage(project, exportedPackages, packageName)) {
                 nullMarkedPackages.add(packageName);
             }
         }
@@ -116,6 +117,7 @@ public final class CoverageAnalyzer {
                 boolean method = PUBLIC_MEMBER.matcher(line).find();
                 boolean field = PUBLIC_FIELD.matcher(line).find();
                 boolean type = PUBLIC_TYPE.matcher(line).find();
+                boolean returnNullness = hasReturnNullness(lines, i);
                 if (type || method || field) {
                     publicApi++;
                     if (fileNullMarked || localNullness) {
@@ -124,7 +126,7 @@ public final class CoverageAnalyzer {
                 }
                 if (method) {
                     publicMethods++;
-                    if (fileNullMarked || localNullness) {
+                    if (fileNullMarked || returnNullness) {
                         returnSpecified++;
                     }
                     for (String parameter : parameters(line)) {
@@ -137,9 +139,7 @@ public final class CoverageAnalyzer {
                 int generics = genericTypeUseCount(line);
                 if ((type || method || field) && generics > 0) {
                     genericTypeUses += generics;
-                    if (hasAnnotatedTypeArgument(line)) {
-                        genericTypeUseSpecified += generics;
-                    }
+                    genericTypeUseSpecified += annotatedGenericTypeUseCount(line);
                 }
             }
         }
@@ -180,6 +180,53 @@ public final class CoverageAnalyzer {
         return text.contains("@Nullable") || text.contains("@NonNull")
                 || text.contains("@" + AnnotationCatalog.JSPECIFY_NULLABLE)
                 || text.contains("@" + AnnotationCatalog.JSPECIFY_NON_NULL);
+    }
+
+    private boolean hasReturnNullness(List<String> lines, int index) {
+        String returnPrefix = eraseGenericContents(returnPrefix(lines.get(index)));
+        if (hasNullnessToken(returnPrefix)) {
+            return true;
+        }
+        int start = Math.max(0, index - 2);
+        for (int i = start; i < index; i++) {
+            String previous = lines.get(i).trim();
+            if (previous.startsWith("@") && hasNullnessToken(previous)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String returnPrefix(String line) {
+        int paren = line.indexOf('(');
+        if (paren < 0) {
+            return line;
+        }
+        String beforeParameters = line.substring(0, paren);
+        int methodNameStart = beforeParameters.length() - 1;
+        while (methodNameStart >= 0
+                && Character.isJavaIdentifierPart(beforeParameters.charAt(methodNameStart))) {
+            methodNameStart--;
+        }
+        return beforeParameters.substring(0, Math.max(0, methodNameStart + 1));
+    }
+
+    private String eraseGenericContents(String text) {
+        StringBuilder out = new StringBuilder(text.length());
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '<') {
+                depth++;
+                out.append(c);
+            } else if (c == '>') {
+                depth = Math.max(0, depth - 1);
+                out.append(c);
+            } else {
+                out.append(depth == 0 ? c : ' ');
+            }
+        }
+        return out.toString();
     }
 
     private Set<String> exportedPackages(List<String> lines) {
@@ -246,18 +293,88 @@ public final class CoverageAnalyzer {
     }
 
     private int genericTypeUseCount(String line) {
+        return genericRanges(line).size();
+    }
+
+    private int annotatedGenericTypeUseCount(String line) {
         int count = 0;
-        for (int i = 0; i < line.length(); i++) {
-            if (line.charAt(i) == '<') {
+        for (Range range : genericRanges(line)) {
+            if (genericTypeUseAnnotated(line, range)) {
                 count++;
             }
         }
         return count;
     }
 
-    private boolean hasAnnotatedTypeArgument(String line) {
-        int start = line.indexOf('<');
-        int end = line.lastIndexOf('>');
-        return start >= 0 && end > start && hasNullnessToken(line.substring(start, end + 1));
+    private boolean genericTypeUseAnnotated(String line, Range range) {
+        if (hasNullnessToken(prefixBeforeGenericBase(line, range.start()))) {
+            return true;
+        }
+        String content = line.substring(range.start() + 1, range.end());
+        int depth = 0;
+        StringBuilder direct = new StringBuilder();
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            if (c == '<') {
+                depth++;
+            } else if (c == '>') {
+                depth = Math.max(0, depth - 1);
+            } else if (depth == 0) {
+                direct.append(c);
+            }
+        }
+        return hasNullnessToken(direct.toString());
     }
+
+    private String prefixBeforeGenericBase(String line, int genericStart) {
+        int i = genericStart - 1;
+        while (i >= 0 && Character.isWhitespace(line.charAt(i))) {
+            i--;
+        }
+        while (i >= 0 && (Character.isJavaIdentifierPart(line.charAt(i))
+                || line.charAt(i) == '.')) {
+            i--;
+        }
+        int start = Math.max(0, i - 80);
+        return line.substring(start, genericStart);
+    }
+
+    private List<Range> genericRanges(String line) {
+        List<Range> ranges = new ArrayList<>();
+        List<Integer> stack = new ArrayList<>();
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '<' && looksLikeGenericStart(line, i)) {
+                stack.add(i);
+            } else if (c == '>' && !stack.isEmpty()) {
+                int start = stack.remove(stack.size() - 1);
+                ranges.add(new Range(start, i));
+            }
+        }
+        return ranges;
+    }
+
+    private boolean looksLikeGenericStart(String line, int index) {
+        int previous = index - 1;
+        while (previous >= 0 && Character.isWhitespace(line.charAt(previous))) {
+            previous--;
+        }
+        if (previous < 0) {
+            return false;
+        }
+        char before = line.charAt(previous);
+        if (!Character.isJavaIdentifierPart(before) && before != '.' && before != '>') {
+            return false;
+        }
+        int next = index + 1;
+        while (next < line.length() && Character.isWhitespace(line.charAt(next))) {
+            next++;
+        }
+        return next < line.length()
+                && (Character.isJavaIdentifierStart(line.charAt(next))
+                || line.charAt(next) == '@'
+                || line.charAt(next) == '?');
+    }
+
+    private record Range(int start, int end) {}
 }

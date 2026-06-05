@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Implements the {@code jspecify:nullaway-check} goal.
+ * Implements the {@code jspecify-migration:nullaway-check} goal.
  *
  * <p>This goal verifies that the current Maven project exposes an executable Error Prone and
  * NullAway compiler setup and, when the check is enabled, generates a ready-to-use
@@ -51,7 +51,7 @@ public class NullAwayCheckMojo extends AbstractMojo {
     private List<String> excludedClasses;
 
     /**
-     * Runs the {@code jspecify:nullaway-check} goal.
+     * Runs the {@code jspecify-migration:nullaway-check} goal.
      *
      * <p>When the check is disabled, writes a {@code disabled} status report and returns. Otherwise
      * validates that annotated packages are configured and that the project provides an Error Prone

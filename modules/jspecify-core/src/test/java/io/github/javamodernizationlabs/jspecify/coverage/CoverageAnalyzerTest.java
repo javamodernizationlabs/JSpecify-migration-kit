@@ -60,4 +60,101 @@ class CoverageAnalyzerTest {
 
         assertEquals(1, summary.publicApiElements());
     }
+
+    @Test
+    void nullMarkedPackageCoverageUsesPublicApiScopeForNumerator(@TempDir Path tmp)
+            throws IOException {
+        Path api = tmp.resolve("src/main/java/com/acme/api");
+        Path internal = tmp.resolve("src/main/java/com/acme/internal");
+        Files.createDirectories(api);
+        Files.createDirectories(internal);
+        Files.writeString(api.resolve("package-info.java"),
+                "@org.jspecify.annotations.NullMarked\npackage com.acme.api;\n");
+        Files.writeString(api.resolve("Api.java"), "package com.acme.api; public class Api {}\n");
+        Files.writeString(internal.resolve("package-info.java"),
+                "@org.jspecify.annotations.NullMarked\npackage com.acme.internal;\n");
+        Files.writeString(internal.resolve("Internal.java"),
+                "package com.acme.internal; public class Internal {}\n");
+        ProjectModel project = ProjectModel.of(tmp, List.of(tmp.resolve("src/main/java")),
+                List.of(), List.of("com.acme.api.**"), List.of(), false, false);
+
+        CoverageSummary summary = new CoverageAnalyzer().analyze(project);
+
+        assertEquals(1, summary.packagesSeen());
+        assertEquals(1, summary.nullMarkedPackages());
+        assertEquals(1.0d, summary.nullMarkedPackageRatio());
+    }
+
+    @Test
+    void parameterAnnotationDoesNotSpecifyReturnNullness(@TempDir Path tmp) throws IOException {
+        Path api = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(api);
+        Files.writeString(api.resolve("Api.java"),
+                """
+                package com.acme;
+                import org.jspecify.annotations.Nullable;
+                public class Api {
+                    public String find(@Nullable String key) { return ""; }
+                }
+                """);
+
+        CoverageSummary summary = new CoverageAnalyzer().analyze(ProjectModel.of(tmp));
+
+        assertEquals(1, summary.publicMethods());
+        assertEquals(0, summary.returnNullnessSpecified());
+        assertEquals(1, summary.publicParameters());
+        assertEquals(1, summary.parameterNullnessSpecified());
+    }
+
+    @Test
+    void genericTypeUseCoverageCountsAnnotatedGroupsIndividually(@TempDir Path tmp)
+            throws IOException {
+        Path api = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(api);
+        Files.writeString(api.resolve("Api.java"),
+                """
+                package com.acme;
+                import java.util.List;
+                import java.util.Map;
+                import org.jspecify.annotations.Nullable;
+                public class Api {
+                    public Map<String, List<@Nullable Foo>> names() { return null; }
+                    public @Nullable List<String> nullableList() { return null; }
+                }
+                class Foo {}
+                """);
+
+        CoverageSummary summary = new CoverageAnalyzer().analyze(ProjectModel.of(tmp));
+
+        assertEquals(3, summary.genericTypeUses());
+        assertEquals(2, summary.genericTypeUseNullnessSpecified());
+        assertEquals(1, summary.returnNullnessSpecified());
+    }
+
+    @Test
+    void emptyProjectDoesNotReportPerfectCoverage(@TempDir Path tmp) throws IOException {
+        CoverageSummary summary = new CoverageAnalyzer().analyze(ProjectModel.of(tmp));
+
+        assertEquals(0.0d, summary.specifiedRatio());
+        assertEquals(0.0d, summary.nullMarkedPackageRatio());
+    }
+
+    @Test
+    void comparisonAndShiftOperatorsDoNotCountAsGenericTypeUses(@TempDir Path tmp)
+            throws IOException {
+        Path api = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(api);
+        Files.writeString(api.resolve("Api.java"),
+                """
+                package com.acme;
+                public class Api {
+                    public boolean less = 1 < 2;
+                    public int shifted = 1 << 2;
+                }
+                """);
+
+        CoverageSummary summary = new CoverageAnalyzer().analyze(ProjectModel.of(tmp));
+
+        assertEquals(0, summary.genericTypeUses());
+    }
 }

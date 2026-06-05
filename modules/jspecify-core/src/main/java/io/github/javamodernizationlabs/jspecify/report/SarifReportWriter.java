@@ -5,8 +5,6 @@ import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 import io.github.javamodernizationlabs.jspecify.Severity;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -85,7 +83,7 @@ public final class SarifReportWriter {
         message.put("text", Json.string(issue.message()));
 
         Map<String, String> artifact = new LinkedHashMap<>();
-        artifact.put("uri", Json.string(issue.location().path().toString()));
+        artifact.put("uri", Json.string(uri(issue.location().path())));
 
         Map<String, String> region = new LinkedHashMap<>();
         region.put("startLine", Json.number(Math.max(1, issue.location().startLine())));
@@ -115,6 +113,11 @@ public final class SarifReportWriter {
         return Json.object(fp);
     }
 
+    private String uri(Path path) {
+        String normalized = path.toString().replace('\\', '/');
+        return normalized.isBlank() ? "unknown" : normalized;
+    }
+
     private String toSarifLevel(Severity severity) {
         return switch (severity) {
             case CRITICAL, HIGH -> "error";
@@ -132,7 +135,6 @@ public final class SarifReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, render(plan), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, render(plan));
     }
 }

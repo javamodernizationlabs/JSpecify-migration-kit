@@ -4,8 +4,6 @@ import io.github.javamodernizationlabs.jspecify.Issue;
 import io.github.javamodernizationlabs.jspecify.MigrationPlan;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -45,15 +43,14 @@ public final class MarkdownReportWriter {
             sb.append('\n');
         }
 
-        sb.append("## Recommended phases\n\n");
         for (var phase : plan.phases()) {
-            sb.append(phase.order()).append(". **").append(mdText(phase.title())).append("** — ")
-                    .append(mdText(phase.description())).append("\n");
+            sb.append("## ").append(phase.order()).append(". ")
+                    .append(mdText(phase.title())).append("\n\n");
+            sb.append(mdText(phase.description())).append("\n\n");
             for (String cmd : phase.commands()) {
-                sb.append("   ```bash\n   ").append(cmd).append("\n   ```\n");
+                sb.append("```bash\n").append(cmd).append("\n```\n\n");
             }
         }
-        sb.append('\n');
 
         if (!plan.issues().isEmpty()) {
             sb.append("## Issues\n\n");
@@ -78,8 +75,7 @@ public final class MarkdownReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, render(plan), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, render(plan));
     }
 
     /**

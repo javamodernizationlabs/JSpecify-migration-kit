@@ -10,6 +10,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JspecifyConfigLoaderTest {
@@ -101,5 +102,96 @@ class JspecifyConfigLoaderTest {
         ));
 
         assertTrue(config.generatedCodeExcludes().isEmpty());
+    }
+
+    @Test
+    void blockListsReplaceDefaultsAndPriorLayer(@TempDir Path tmp) throws IOException {
+        Files.writeString(tmp.resolve("jml.yml"),
+                """
+                reports:
+                  formats:
+                    - console
+                    - json
+                migration:
+                  generatedCode:
+                    patterns:
+                      - "**/first-generated/**"
+                """);
+        Files.writeString(tmp.resolve("jspecify.yml"),
+                """
+                reports:
+                  formats:
+                    - markdown
+                migration:
+                  generatedCode:
+                    patterns:
+                      - "**/custom-generated/**"
+                """);
+
+        JspecifyConfig config = JspecifyConfigLoader.load(tmp);
+
+        assertEquals(List.of("markdown"), config.reportFormats());
+        assertEquals(List.of("**/custom-generated/**"), config.generatedCodeExcludes());
+    }
+
+    @Test
+    void quotedBooleansAreParsedAsBooleans() {
+        JspecifyConfig config = JspecifyConfigLoader.parse(List.of(
+                "nullaway:",
+                "  enabled: \"true\"",
+                "publicApi:",
+                "  jpmsExportsOnly: 'true'",
+                "kotlinVerification:",
+                "  enabled: \"true\"",
+                "  failOnWarnings: 'true'"
+        ));
+
+        assertTrue(config.nullawayEnabled());
+        assertTrue(config.publicApiJpmsExportsOnly());
+        assertTrue(config.kotlinVerificationEnabled());
+        assertTrue(config.kotlinVerificationFailOnWarnings());
+    }
+
+    @Test
+    void inlineListsWorkForAllDocumentedListKeys() {
+        JspecifyConfig config = JspecifyConfigLoader.parse(List.of(
+                "sourceRoots: [src/main/java, generated/java]",
+                "packagePolicy:",
+                "  markPackages: [com.acme.api]",
+                "  leaveUnmarked: [com.acme.legacy]",
+                "publicApi:",
+                "  include: [com.acme.api.**]",
+                "  exclude: [com.acme.internal.**]",
+                "nullaway:",
+                "  annotatedPackages: [com.acme]",
+                "  excludedClasses: [com.acme.generated.*]"
+        ));
+
+        assertEquals(List.of(Path.of("src/main/java"), Path.of("generated/java")),
+                config.sourceRoots());
+        assertEquals(List.of("com.acme.api"), config.markPackages());
+        assertEquals(List.of("com.acme.legacy"), config.leaveUnmarkedPackages());
+        assertEquals(List.of("com.acme.api.**"), config.publicApiIncludes());
+        assertEquals(List.of("com.acme.internal.**"), config.publicApiExcludes());
+        assertEquals(List.of("com.acme"), config.nullawayAnnotatedPackages());
+        assertEquals(List.of("com.acme.generated.*"), config.nullawayExcludedClasses());
+    }
+
+    @Test
+    void stripCommentHonorsSingleQuotedScalars() {
+        JspecifyConfig config = JspecifyConfigLoader.parse(List.of(
+                "nullaway:",
+                "  mode: 'warn#still-value' # real comment"
+        ));
+
+        assertEquals("warn#still-value", config.nullawayMode());
+    }
+
+    @Test
+    void tabIndentationIsRejected() {
+        assertThrows(IllegalArgumentException.class, () -> JspecifyConfigLoader.parse(List.of(
+                "nullaway:",
+                "\tenabled: true"
+        )));
     }
 }

@@ -3,8 +3,6 @@ package io.github.javamodernizationlabs.jspecify.report;
 import io.github.javamodernizationlabs.jspecify.rewrite.RewriteResult;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -36,11 +34,11 @@ public final class RewriteReportWriter {
         if (!result.changes().isEmpty()) {
             sb.append("## Changes\n\n");
             for (var change : result.changes()) {
-                sb.append("- `").append(change.path()).append("`: ")
-                        .append(change.description())
+                sb.append("- `").append(mdInlineCode(String.valueOf(change.path()))).append("`: ")
+                        .append(mdText(change.description()))
                         .append(" (").append(change.replacements()).append(" replacements)\n");
                 for (String warning : change.warnings()) {
-                    sb.append("  - Warning: ").append(warning).append("\n");
+                    sb.append("  - Warning: ").append(mdText(warning)).append("\n");
                 }
             }
             sb.append('\n');
@@ -48,7 +46,7 @@ public final class RewriteReportWriter {
         if (!result.warnings().isEmpty()) {
             sb.append("## Warnings\n\n");
             for (String warning : result.warnings()) {
-                sb.append("- ").append(warning).append("\n");
+                sb.append("- ").append(mdText(warning)).append("\n");
             }
         }
         return sb.toString();
@@ -63,7 +61,21 @@ public final class RewriteReportWriter {
      * @throws IOException if the parent directories or file cannot be written
      */
     public void write(Path output, RewriteResult result) throws IOException {
-        Files.createDirectories(output.getParent());
-        Files.writeString(output, markdown(result), StandardCharsets.UTF_8);
+        ReportFiles.writeString(output, markdown(result));
+    }
+
+    private static String mdText(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("\r", " ").replace("\n", " ").replace("|", "\\|");
+    }
+
+    private static String mdInlineCode(String s) {
+        if (s == null) {
+            return "";
+        }
+        return s.replace("`", "'").replace("\r", " ").replace("\n", " ")
+                .replace("|", "\\|");
     }
 }
