@@ -26,4 +26,14 @@ class RecipeCatalogTest {
             assertTrue(catalog.contains("@io.micrometer.common.lang.NonNullApi"));
         }
     }
+
+    @Test
+    void documentsFixTypeUsePlacementNarrowing() throws Exception {
+        try (var in = getClass().getResourceAsStream("/META-INF/rewrite/jspecify.yml")) {
+            assertNotNull(in);
+            String catalog = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(catalog.contains("does not match arbitrary *.Nullable annotations"),
+                    "FixTypeUseAnnotationPlacement should document its intentional narrowing");
+        }
+    }
 }

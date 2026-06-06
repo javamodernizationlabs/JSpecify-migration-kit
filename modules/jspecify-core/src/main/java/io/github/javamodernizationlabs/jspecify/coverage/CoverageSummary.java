@@ -6,6 +6,9 @@ package io.github.javamodernizationlabs.jspecify.coverage;
  *
  * <p>The raw counts are paired with ratio accessors that guard against division
  * by zero by returning {@code 0.0} when the corresponding denominator is zero.
+ * A zero-denominator ratio therefore reads as <em>not</em> fully covered rather
+ * than as 100%; use {@link #elementsFound()} to distinguish "no measurable API"
+ * from "measurable but unspecified" before applying a coverage threshold.
  *
  * @param publicApiElements total number of public API elements (types, methods
  *     and fields) seen
@@ -41,6 +44,26 @@ public record CoverageSummary(
         int genericTypeUseNullnessSpecified,
         int kotlinInteropWarnings
 ) {
+    /**
+     * Returns whether the scan observed any measurable public-API element.
+     *
+     * <p>This is {@code true} when at least one public API element, package,
+     * method, parameter or generic type use was seen. It lets callers tell an
+     * empty or non-Java project (where every ratio is {@code 0.0} for lack of a
+     * denominator) apart from a real API that is simply unspecified, so a CI
+     * coverage threshold does not silently pass on an empty API.
+     *
+     * @return {@code true} if any coverage denominator is non-zero, otherwise
+     *     {@code false}
+     */
+    public boolean elementsFound() {
+        return publicApiElements > 0
+                || packagesSeen > 0
+                || publicMethods > 0
+                || publicParameters > 0
+                || genericTypeUses > 0;
+    }
+
     /**
      * Returns the fraction of public API elements with a specified nullness
      * contract.

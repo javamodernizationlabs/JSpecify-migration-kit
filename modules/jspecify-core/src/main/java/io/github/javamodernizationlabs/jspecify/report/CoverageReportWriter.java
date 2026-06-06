@@ -129,8 +129,8 @@ public final class CoverageReportWriter {
      *
      * <p>Recognized format names are {@code markdown} (or {@code md}),
      * {@code json} and {@code html}; comparison is case-insensitive and
-     * unrecognized names are ignored. A {@code null} or empty list defaults to
-     * all formats.
+     * unrecognized names are ignored. A {@code null} list defaults to all
+     * formats, while an empty list produces no report files.
      *
      * @param outputDirectory the directory to write the report files into
      * @param summary the coverage summary to render
@@ -202,7 +202,7 @@ public final class CoverageReportWriter {
 
     private Set<String> normalize(List<String> formats) {
         Set<String> normalized = new LinkedHashSet<>();
-        if (formats == null || formats.isEmpty()) {
+        if (formats == null) {
             normalized.addAll(List.of("markdown", "json", "html"));
             return normalized;
         }
