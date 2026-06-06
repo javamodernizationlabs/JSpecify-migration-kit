@@ -150,6 +150,26 @@ class AnnotationScannerTest {
     }
 
     @Test
+    void explicitImportWinsOverWildcardWithSameSimpleName(@TempDir Path tmp) throws IOException {
+        Path mainJava = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(mainJava);
+        Files.writeString(mainJava.resolve("Api.java"),
+                """
+                package com.acme;
+                import javax.annotation.Nullable;
+                import org.jetbrains.annotations.*;
+                class Api { @Nullable String name; }
+                """);
+
+        AnnotationInventory inv = new AnnotationScanner().scan(ProjectModel.of(tmp));
+
+        // The explicit import resolves @Nullable to javax; the wildcard's
+        // same-simple-name candidate must not drop the usage as ambiguous.
+        assertEquals(1, inv.totalByAnnotation().get("javax.annotation.Nullable"));
+        assertNull(inv.totalByAnnotation().get("org.jetbrains.annotations.Nullable"));
+    }
+
+    @Test
     void forConfigHonorsCustomAnnotationMappings(@TempDir Path tmp) throws IOException {
         Files.writeString(tmp.resolve("jspecify.yml"),
                 """

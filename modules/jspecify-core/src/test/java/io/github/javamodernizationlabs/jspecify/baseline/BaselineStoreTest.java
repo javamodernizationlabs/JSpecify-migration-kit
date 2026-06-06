@@ -41,4 +41,41 @@ class BaselineStoreTest {
 
         assertThrows(java.io.IOException.class, () -> new BaselineStore().read(baseline));
     }
+
+    @Test
+    void coLocatedIssuesGetDistinctFingerprints(@TempDir Path tmp) throws Exception {
+        Issue col1 = issueAt(new Location(Path.of("Api.java"), 7, 3, 7, 3));
+        Issue col2 = issueAt(new Location(Path.of("Api.java"), 7, 12, 7, 12));
+        Path baseline = tmp.resolve("baseline.json");
+        BaselineStore store = new BaselineStore();
+
+        store.write(baseline, List.of(col1));
+
+        // Same line, different column must not collapse: col2 stays "new".
+        assertEquals(List.of(col2), store.newIssues(List.of(col1, col2), baseline));
+    }
+
+    @Test
+    void pathSeparatorDoesNotAffectFingerprint(@TempDir Path tmp) throws Exception {
+        Issue forwardSlash = issueAt(Location.of(Path.of("src/Api.java"), 5));
+        Issue backSlash = issueAt(Location.of(Path.of("src\\Api.java"), 5));
+        Path baseline = tmp.resolve("baseline.json");
+        BaselineStore store = new BaselineStore();
+
+        store.write(baseline, List.of(forwardSlash));
+
+        // Both paths normalize to forward slashes, so the baseline filters out both.
+        assertEquals(List.of(), store.newIssues(List.of(backSlash), baseline));
+    }
+
+    private static Issue issueAt(Location location) {
+        return Issue.builder()
+                .ruleId("jspecify.old-nullness-annotation")
+                .severity(Severity.MEDIUM)
+                .title("Old annotation")
+                .message("Old annotation")
+                .location(location)
+                .recommendation(Recommendation.of("Convert it."))
+                .build();
+    }
 }

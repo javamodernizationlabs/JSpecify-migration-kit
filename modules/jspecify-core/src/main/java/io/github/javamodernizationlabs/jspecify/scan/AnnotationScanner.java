@@ -110,6 +110,7 @@ public final class AnnotationScanner {
         List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
         Map<String, String> shortToFqn = new HashMap<>();
         Set<String> ambiguousShortNames = new LinkedHashSet<>();
+        Set<String> explicitShortNames = new LinkedHashSet<>();
         Set<String> wildcardPackages = new LinkedHashSet<>();
         Set<String> knownAnnotations = knownAnnotations();
         // First pass: resolve imports of known annotations and their short names.
@@ -124,15 +125,22 @@ public final class AnnotationScanner {
                     wildcardPackages.add(fqn.substring(0, fqn.length() - 2));
                 } else if (knownAnnotations.contains(fqn)) {
                     String simple = fqn.substring(fqn.lastIndexOf('.') + 1);
+                    explicitShortNames.add(simple);
                     addShortNameMapping(shortToFqn, ambiguousShortNames, simple, fqn);
                 }
             }
         }
+        // Explicit imports win over wildcard-resolved names: only add a wildcard
+        // simple name when no explicit import already claimed it, and never let a
+        // wildcard mark an explicit mapping ambiguous.
         for (String fqn : knownAnnotations) {
             String packageName = fqn.substring(0, fqn.lastIndexOf('.'));
             if (wildcardPackages.contains(packageName)) {
-                addShortNameMapping(shortToFqn, ambiguousShortNames,
-                        fqn.substring(fqn.lastIndexOf('.') + 1), fqn);
+                String simple = fqn.substring(fqn.lastIndexOf('.') + 1);
+                if (explicitShortNames.contains(simple)) {
+                    continue;
+                }
+                addShortNameMapping(shortToFqn, ambiguousShortNames, simple, fqn);
             }
         }
         ambiguousShortNames.forEach(shortToFqn::remove);
@@ -248,11 +256,11 @@ public final class AnnotationScanner {
                 i++;
                 continue;
             }
-            if (!inString && !inChar && c == '/' && next == '/') {
+            if (c == '/' && next == '/') {
                 out.append(" ".repeat(line.length() - i));
                 break;
             }
-            if (!inString && !inChar && c == '/' && next == '*') {
+            if (c == '/' && next == '*') {
                 inBlockComment = true;
                 out.append("  ");
                 i += 2;

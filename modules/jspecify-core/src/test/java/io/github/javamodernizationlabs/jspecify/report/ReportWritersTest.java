@@ -10,7 +10,9 @@ import io.github.javamodernizationlabs.jspecify.coverage.CoverageSummary;
 import io.github.javamodernizationlabs.jspecify.rewrite.RewriteChange;
 import io.github.javamodernizationlabs.jspecify.rewrite.RewriteResult;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -152,6 +154,48 @@ class ReportWritersTest {
         assertTrue(markdown.contains("Convert \\| risky text"));
         assertTrue(markdown.contains("warn \\| here next"));
         assertTrue(markdown.contains("top \\| warning"));
+    }
+
+    @Test
+    void coverageEmptyFormatsWriteNoFiles(@TempDir Path dir) throws Exception {
+        var summary = new CoverageSummary(4, 3, 1, 2, 1,
+                2, 1, 3, 2, 2, 1, 1);
+
+        new CoverageReportWriter().write(dir, summary, List.of());
+
+        try (var entries = Files.list(dir)) {
+            assertEquals(0, entries.count());
+        }
+    }
+
+    @Test
+    void coverageExplicitFormatWritesOnlyThatFile(@TempDir Path dir) throws Exception {
+        var summary = new CoverageSummary(4, 3, 1, 2, 1,
+                2, 1, 3, 2, 2, 1, 1);
+
+        new CoverageReportWriter().write(dir, summary, List.of("json"));
+
+        assertTrue(Files.exists(dir.resolve("coverage.json")));
+        assertFalse(Files.exists(dir.resolve("coverage.md")));
+        assertFalse(Files.exists(dir.resolve("coverage.html")));
+    }
+
+    @Test
+    void markdownPlanCommandFenceSurvivesNewlinesAndBackticks() {
+        var phase = new MigrationPlan.Phase(1, "Run", "Run the recipe.",
+                List.of("echo ```code``` && run\nsecond line"));
+        var plan = new MigrationPlan(AnnotationInventory.empty(), List.of(phase),
+                MigrationPlan.Risk.LOW, List.of());
+
+        String md = new MarkdownReportWriter().render(plan);
+
+        // Newlines in the command are collapsed so it stays on one line.
+        assertTrue(md.contains("echo ```code``` && run second line"));
+        // The raw embedded newline must not leak through the fenced block.
+        assertFalse(md.contains("run\nsecond"));
+        // The fence is widened past the longest backtick run in the command.
+        assertTrue(md.contains("````bash\necho"));
+        assertTrue(md.contains("second line\n````\n"));
     }
 
     private Issue issue(Path path, int line, int column, String message) {

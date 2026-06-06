@@ -2,6 +2,7 @@ package io.github.javamodernizationlabs.jspecify.kotlin;
 
 import io.github.javamodernizationlabs.jspecify.ProjectModel;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -227,8 +228,10 @@ public final class KotlinInteropVerifier {
                 String method = matcher.group(2);
                 if (!method.equals("if") && !method.equals("for") && !method.equals("while")) {
                     String returnType = matcher.group(1).trim();
-                    methods.add(methodAssertion(qualifiedTypeName, method, returnType,
-                            imports, nullMarked));
+                    if (!hasMethodTypeParameters(returnType)) {
+                        methods.add(methodAssertion(qualifiedTypeName, method, returnType,
+                                imports, nullMarked));
+                    }
                 }
             }
             if (inPublicType) {
@@ -236,6 +239,13 @@ public final class KotlinInteropVerifier {
             }
         }
         return methods;
+    }
+
+    private boolean hasMethodTypeParameters(String javaReturnType) {
+        // A generic method such as {@code public <T> T identity()} captures a
+        // leading type-parameter declaration in the return type. The unbound
+        // identifier cannot be expressed in a Kotlin sample, so skip the method.
+        return cleanReturnType(javaReturnType).startsWith("<");
     }
 
     private int braceDelta(String line) {
@@ -312,9 +322,9 @@ public final class KotlinInteropVerifier {
             dimensions++;
             javaType = javaType.substring(0, javaType.length() - 2).trim();
         }
-        String mapped = kotlinNonArrayType(javaType, imports);
+        StringBuilder mapped = new StringBuilder(kotlinNonArrayType(javaType, imports));
         if (dimensions == 0) {
-            return mapped;
+            return mapped.toString();
         }
         if (dimensions == 1 && primitive(javaType)) {
             return switch (javaType) {
@@ -326,13 +336,13 @@ public final class KotlinInteropVerifier {
                 case "float" -> "FloatArray";
                 case "double" -> "DoubleArray";
                 case "char" -> "CharArray";
-                default -> mapped;
+                default -> mapped.toString();
             };
         }
         for (int i = 0; i < dimensions; i++) {
-            mapped = "Array<" + mapped + ">";
+            mapped = new StringBuilder("Array<" + mapped + ">");
         }
-        return mapped;
+        return mapped.toString();
     }
 
     private String kotlinNonArrayType(String javaType, Map<String, String> imports) {
@@ -414,7 +424,7 @@ public final class KotlinInteropVerifier {
                            Path outputDirectory,
                            List<Path> classpath,
                            List<String> warnings) {
-        if (!commandAvailable("kotlinc")) {
+        if (!commandAvailable()) {
             warnings.add("kotlinc was not found on PATH; generated samples were not compiled.");
             return "skipped: kotlinc not found";
         }
@@ -424,7 +434,7 @@ public final class KotlinInteropVerifier {
             command.add(sampleFile.toString());
             if (classpath != null && !classpath.isEmpty()) {
                 command.add("-classpath");
-                command.add(String.join(System.getProperty("path.separator"),
+                command.add(String.join(File.pathSeparator,
                         classpath.stream().map(Path::toString).toList()));
             }
             command.add("-d");
@@ -460,9 +470,9 @@ public final class KotlinInteropVerifier {
         }
     }
 
-    private boolean commandAvailable(String command) {
+    private boolean commandAvailable() {
         try {
-            Process process = new ProcessBuilder(command, "-version")
+            Process process = new ProcessBuilder("kotlinc", "-version")
                     .redirectErrorStream(true)
                     .start();
             CompletableFuture<String> outputFuture = readOutputAsync(process);
@@ -474,12 +484,10 @@ public final class KotlinInteropVerifier {
             }
             outputFuture.get(5, TimeUnit.SECONDS);
             return available;
-        } catch (IOException e) {
+        } catch (IOException | ExecutionException | TimeoutException e) {
             return false;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return false;
-        } catch (ExecutionException | TimeoutException e) {
             return false;
         }
     }

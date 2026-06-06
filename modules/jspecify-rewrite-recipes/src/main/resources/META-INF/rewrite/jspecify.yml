@@ -103,7 +103,13 @@ recipeList:
 type: specs.openrewrite.org/v1beta/recipe
 name: io.github.jml.jspecify.FixTypeUseAnnotationPlacement
 displayName: Find ambiguous type-use nullness placements
-description: Finds legacy nullable container annotations that require manual container-vs-element review.
+description: |
+  Finds legacy nullable container annotations that require manual
+  container-vs-element review. This recipe intentionally scans only the
+  catalogued legacy @Nullable variants (JetBrains, JSR-305 incl. CheckForNull,
+  Spring, FindBugs incl. PossiblyNull, Checker Framework, RxJava, Reactor,
+  Android, Micrometer); it does not match arbitrary *.Nullable annotations the
+  way the core find/report scan does.
 recipeList:
   - org.openrewrite.java.search.FindAnnotations:
       annotationPattern: "@org.jetbrains.annotations.Nullable"

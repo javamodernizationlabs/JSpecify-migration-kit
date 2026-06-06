@@ -95,6 +95,32 @@ class KotlinInteropVerifierTest {
     }
 
     @Test
+    void skipsGenericMethodsWithLeadingTypeParameters(@TempDir Path tmp) throws Exception {
+        Path api = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(api);
+        Files.writeString(api.resolve("UserApi.java"),
+                """
+                package com.acme;
+                @org.jspecify.annotations.NullMarked
+                public class UserApi {
+                    public String name() { return ""; }
+                    public <T> T identity() { return null; }
+                    public static <R> R make() { return null; }
+                }
+                """);
+
+        KotlinVerificationResult result = new KotlinInteropVerifier()
+                .verify(ProjectModel.of(tmp), tmp.resolve("build/kotlin"), true, false, List.of());
+
+        String sample = Files.readString(result.sampleFile());
+        assertTrue(sample.contains("val nameValue: String = api.name()"));
+        assertFalse(sample.contains("api.identity()"));
+        assertFalse(sample.contains("api.make()"));
+        assertFalse(sample.contains("<T> T"));
+        assertFalse(sample.contains("<R> R"));
+    }
+
+    @Test
     void ignoresMethodsDeclaredOnlyOnNestedTypes(@TempDir Path tmp) throws Exception {
         Path api = tmp.resolve("src/main/java/com/acme");
         Files.createDirectories(api);

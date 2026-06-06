@@ -48,7 +48,7 @@ public final class MarkdownReportWriter {
                     .append(mdText(phase.title())).append("\n\n");
             sb.append(mdText(phase.description())).append("\n\n");
             for (String cmd : phase.commands()) {
-                sb.append("```bash\n").append(cmd).append("\n```\n\n");
+                appendFencedCommand(sb, cmd);
             }
         }
 
@@ -76,6 +76,41 @@ public final class MarkdownReportWriter {
      */
     public void write(Path output, MigrationPlan plan) throws IOException {
         ReportFiles.writeString(output, render(plan));
+    }
+
+    /**
+     * Appends a single command inside a fenced {@code bash} code block.
+     *
+     * <p>Embedded newlines are collapsed to spaces so the command stays on one
+     * line, and the surrounding fence is widened to one more backtick than the
+     * longest backtick run in the command so the command can never close the
+     * fence prematurely.
+     */
+    private static void appendFencedCommand(StringBuilder sb, String cmd) {
+        String oneLine = cmd == null ? "" : cmd.replace("\r", " ").replace("\n", " ");
+        String fence = "`".repeat(Math.max(3, longestBacktickRun(oneLine) + 1));
+        sb.append(fence).append("bash\n").append(oneLine).append('\n')
+                .append(fence).append("\n\n");
+    }
+
+    /**
+     * Returns the length of the longest consecutive run of backticks in the
+     * given text, or {@code 0} if it contains none.
+     */
+    private static int longestBacktickRun(String s) {
+        int longest = 0;
+        int current = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '`') {
+                current++;
+                if (current > longest) {
+                    longest = current;
+                }
+            } else {
+                current = 0;
+            }
+        }
+        return longest;
     }
 
     /**

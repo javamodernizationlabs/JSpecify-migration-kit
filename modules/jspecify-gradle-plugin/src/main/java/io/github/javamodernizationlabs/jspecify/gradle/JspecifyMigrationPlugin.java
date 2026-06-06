@@ -2,6 +2,8 @@ package io.github.javamodernizationlabs.jspecify.gradle;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.compile.JavaCompile;
 
 import java.util.Locale;
@@ -75,7 +77,8 @@ public class JspecifyMigrationPlugin implements Plugin<Project> {
         project.getTasks().register("jspecifyReport", JspecifyPlanTask.class, t -> {
             t.setGroup("reporting");
             t.setDescription("Generate JSpecify JSON, Markdown and SARIF reports.");
-            t.getOutputDirectory().set(extension.getReportsDirectory());
+            t.getOutputDirectory().set(extension.getReportsDirectory()
+                    .map(dir -> dir.dir("report")));
         });
 
         project.getTasks().register("jspecifyRewriteDryRun", JspecifyRewriteHintTask.class, t -> {
@@ -122,10 +125,26 @@ public class JspecifyMigrationPlugin implements Plugin<Project> {
             t.getGeneratedSourceSet().set(extension.getKotlinVerification().getGeneratedSourceSet());
             t.getCompileSamples().set(extension.getKotlinVerification().getCompileSamples());
             t.getFailOnWarnings().set(extension.getKotlinVerification().getFailOnWarnings());
+            t.getMainClasses().from(mainClassesOutput(project));
             t.getOutputDirectory().set(extension.getReportsDirectory()
                     .map(dir -> dir.dir("kotlin-verification")));
-            t.dependsOn(project.getTasks().matching(task -> task.getName().equals("compileJava")));
         });
+    }
+
+    private static Object mainClassesOutput(Project project) {
+        JavaPluginExtension javaExtension = project.getExtensions()
+                .findByType(JavaPluginExtension.class);
+        if (javaExtension == null) {
+            return java.util.List.of();
+        }
+        SourceSet main = javaExtension.getSourceSets()
+                .findByName(SourceSet.MAIN_SOURCE_SET_NAME);
+        if (main == null) {
+            return java.util.List.of();
+        }
+        // The source set output FileCollection carries the implicit dependency on
+        // compileJava, so wiring it here both supplies the classpath and orders the tasks.
+        return main.getOutput().getClassesDirs();
     }
 
     private static boolean hasErrorPronePlugin(Project project) {

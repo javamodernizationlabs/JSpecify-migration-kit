@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CoverageAnalyzerTest {
@@ -137,6 +138,22 @@ class CoverageAnalyzerTest {
 
         assertEquals(0.0d, summary.specifiedRatio());
         assertEquals(0.0d, summary.nullMarkedPackageRatio());
+        assertFalse(summary.elementsFound());
+    }
+
+    @Test
+    void projectWithApiReportsElementsFound(@TempDir Path tmp) throws IOException {
+        Path api = tmp.resolve("src/main/java/com/acme");
+        Files.createDirectories(api);
+        Files.writeString(api.resolve("Api.java"),
+                """
+                package com.acme;
+                public class Api {}
+                """);
+
+        CoverageSummary summary = new CoverageAnalyzer().analyze(ProjectModel.of(tmp));
+
+        assertTrue(summary.elementsFound());
     }
 
     @Test

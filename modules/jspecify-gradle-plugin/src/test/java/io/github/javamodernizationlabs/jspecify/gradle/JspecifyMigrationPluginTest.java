@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -154,5 +155,35 @@ class JspecifyMigrationPluginTest {
         task.run();
 
         assertTrue(Files.readString(source).contains("org.jspecify.annotations.Nullable"));
+    }
+
+    @Test
+    void planAndReportTasksUseDistinctOutputDirectories() {
+        var project = ProjectBuilder.builder().build();
+        project.getPlugins().apply("java");
+        project.getPlugins().apply(JspecifyMigrationPlugin.class);
+
+        var plan = (JspecifyPlanTask) project.getTasks().getByName("jspecifyPlan");
+        var report = (JspecifyPlanTask) project.getTasks().getByName("jspecifyReport");
+
+        assertNotEquals(plan.getOutputDirectory().get().getAsFile(),
+                report.getOutputDirectory().get().getAsFile());
+    }
+
+    @Test
+    void verifyKotlinWiresMainClassesAndDependsOnCompileJava() {
+        var project = ProjectBuilder.builder().build();
+        project.getPlugins().apply("java");
+        project.getPlugins().apply(JspecifyMigrationPlugin.class);
+
+        var task = (JspecifyVerifyKotlinTask) project.getTasks()
+                .getByName("jspecifyVerifyKotlin");
+
+        assertNotNull(task.getMainClasses());
+        boolean dependsOnCompileJava = task.getMainClasses().getBuildDependencies()
+                .getDependencies(task).stream()
+                .anyMatch(dependency -> dependency.getName().equals("compileJava"));
+        assertTrue(dependsOnCompileJava,
+                "jspecifyVerifyKotlin should depend on compileJava via the wired main classes");
     }
 }

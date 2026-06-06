@@ -8,12 +8,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Converts well-known legacy nullness annotations to their JSpecify
- * counterparts via composed {@link ChangeType} recipes.
+ * Converts well-known legacy nullness annotations (JetBrains, JSR-305, Spring,
+ * FindBugs, Checker Framework, RxJava, Reactor, Android, Micrometer) to their
+ * JSpecify counterparts via composed {@link ChangeType} recipes.
  *
- * <p>Per spec section 28.2, this recipe only performs <em>semantically
- * safe</em> 1:1 substitutions. Aliases, meta-annotations and package-level
- * defaults are intentionally left to manual review.
+ * <p>Per spec section 28.2, this recipe only performs 1:1 type substitutions:
+ * each mapped legacy annotation is rewritten to its JSpecify counterpart
+ * wherever it occurs. The rewrite is purely a type change and is <em>not</em>
+ * placement-aware, so ambiguous declaration-vs-type-use placements (for example
+ * on arrays or generic type arguments) are converted in place exactly as they
+ * were written rather than being skipped. Use the core find/report flow to
+ * review such placements after conversion. Aliases, meta-annotations and
+ * package-level defaults are intentionally left to manual review.
  */
 public class ConvertKnownAnnotations extends Recipe {
 
@@ -36,16 +42,18 @@ public class ConvertKnownAnnotations extends Recipe {
 
     /**
      * Returns the description explaining which legacy nullness annotations this
-     * recipe converts and which cases it intentionally leaves unchanged.
+     * recipe converts and that the conversion is not placement-aware.
      *
      * @return the recipe description
      */
     @Override
     public String getDescription() {
         return "Rewrites imports and references of well-known legacy nullness annotations "
-                + "(JetBrains, JSR-305, Spring, FindBugs, Checker Framework, etc.) to their "
-                + "JSpecify counterparts. Run FixTypeUseAnnotationPlacement first when you "
-                + "need to inventory ambiguous declaration-vs-type-use placements.";
+                + "(JetBrains, JSR-305, Spring, FindBugs, Checker Framework, RxJava, Reactor, "
+                + "Android, Micrometer) to their JSpecify counterparts. Each mapped annotation "
+                + "is converted in place regardless of placement; ambiguous array/generic "
+                + "declaration-vs-type-use placements are not specially skipped. Use the core "
+                + "find/report flow to review such placements after conversion.";
     }
 
     /**

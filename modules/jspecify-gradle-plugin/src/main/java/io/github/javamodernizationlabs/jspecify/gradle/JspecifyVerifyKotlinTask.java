@@ -6,12 +6,12 @@ import io.github.javamodernizationlabs.jspecify.config.JspecifyConfigLoader;
 import io.github.javamodernizationlabs.jspecify.kotlin.KotlinInteropVerifier;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.GradleException;
+import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
-import org.gradle.api.plugins.JavaPluginExtension;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.OutputDirectory;
-import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskAction;
 import org.gradle.work.DisableCachingByDefault;
 
@@ -70,6 +70,18 @@ public abstract class JspecifyVerifyKotlinTask extends DefaultTask {
     public abstract Property<Boolean> getFailOnWarnings();
 
     /**
+     * The compiled output of the project's main source set, used as the classpath when
+     * compiling generated Kotlin samples.
+     *
+     * <p>The plugin wires this from the {@code main} source set output at configuration time,
+     * which also establishes the implicit dependency on {@code compileJava}.</p>
+     *
+     * @return a {@link ConfigurableFileCollection} of main compiled-output directories
+     */
+    @Classpath
+    public abstract ConfigurableFileCollection getMainClasses();
+
+    /**
      * The directory into which the Kotlin verification artifacts are written.
      *
      * @return a {@link DirectoryProperty} pointing at the output directory
@@ -97,7 +109,7 @@ public abstract class JspecifyVerifyKotlinTask extends DefaultTask {
                 output,
                 getKotlinVerificationEnabled().getOrElse(false),
                 getCompileSamples().getOrElse(false),
-                mainJavaClasses(projectRoot));
+                mainClasses());
         if (getFailOnWarnings().getOrElse(false) && !result.warnings().isEmpty()) {
             throw new GradleException("Kotlin verification warnings: "
                     + String.join("; ", result.warnings()));
@@ -105,17 +117,8 @@ public abstract class JspecifyVerifyKotlinTask extends DefaultTask {
         getLogger().lifecycle("JSpecify Kotlin verification report written to {}", output);
     }
 
-    private List<Path> mainJavaClasses(Path projectRoot) {
-        JavaPluginExtension javaExtension = getProject().getExtensions()
-                .findByType(JavaPluginExtension.class);
-        if (javaExtension == null) {
-            return List.of(projectRoot.resolve("build/classes/java/main"));
-        }
-        SourceSet main = javaExtension.getSourceSets().findByName(SourceSet.MAIN_SOURCE_SET_NAME);
-        if (main == null) {
-            return List.of(projectRoot.resolve("build/classes/java/main"));
-        }
-        return main.getOutput().getClassesDirs().getFiles().stream()
+    private List<Path> mainClasses() {
+        return getMainClasses().getFiles().stream()
                 .map(java.io.File::toPath)
                 .toList();
     }
